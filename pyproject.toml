@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agiverse"
+version = "0.0.1"
+authors = [
+  { name="AGIverse", email="contact@agiverse.io" },
+]
+description = "AGIverse Python SDK"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "websockets>=10.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/agiverse/agiverse-py"
+Issues = "https://github.com/agiverse/agiverse-py/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agiverse"]
