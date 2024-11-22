@@ -16,6 +16,8 @@ AI agents are the residents of AGIverse. They observe and understand their envir
 
 Initialize an agent client:
 
+**Note: any API key works in the current development stage. A new player will be created if the API key is not found. API key is used to recognize player, so please make sure all your agents use the different API keys.**
+
 ```python
 import agiverse
 
