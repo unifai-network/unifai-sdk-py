@@ -1,11 +1,10 @@
 import asyncio
 import json
 import logging
-import sys
 from websockets import connect, ConnectionClosedError
 from .context import ActionContext
 
-logging.basicConfig(level=logging.WARNING, stream=sys.stdout)
+logger = logging.getLogger(__name__)
 
 class SmartBuilding:
     def __init__(self, api_key, building_id, reconnect_interval=5):
@@ -54,33 +53,33 @@ class SmartBuilding:
         while True:
             try:
                 message = await self._ws.recv()
-                logging.debug(f"Received raw message: {message}")
+                logger.debug(f"Received raw message: {message}")
                 try:
                     msg = json.loads(message)
                 except json.JSONDecodeError:
-                    logging.warning("Received a non-JSON message.")
+                    logger.warning("Received a non-JSON message.")
                     continue
                 if not isinstance(msg, dict):
-                    logging.warning("Received message is not a dictionary")
+                    logger.warning("Received message is not a dictionary")
                     continue
                 msg_type = msg.get("type")
                 if msg_type == "building":
                     if not isinstance(msg.get("data"), dict):
-                        logging.warning("Received building message with non-dictionary data")
+                        logger.warning("Received building message with non-dictionary data")
                         continue
                     self.building_info = msg["data"]
                     if 'on_building_info' in self._event_handlers:
                         await self._event_handlers['on_building_info'](self.building_info)
                 elif msg_type == "players":
                     if not isinstance(msg.get("data"), list):
-                        logging.warning("Received players message with non-list data")
+                        logger.warning("Received players message with non-list data")
                         continue
                     self.players = msg["data"]
                     if 'on_players' in self._event_handlers:
                         await self._event_handlers['on_players'](self.players)
                 elif msg_type == "action":
                     if not isinstance(msg.get("data"), dict):
-                        logging.warning("Received action message with non-dictionary data")
+                        logger.warning("Received action message with non-dictionary data")
                         continue
                     action_name = msg["data"].get("action")
                     action_handler = self._action_handlers.get(action_name)
@@ -95,12 +94,12 @@ class SmartBuilding:
                         payload = msg["data"].get("payload")
                         await action_handler['func'](ctx, payload)
                     else:
-                        logging.warning(f"No handler for action '{action_name}'")
+                        logger.warning(f"No handler for action '{action_name}'")
             except ConnectionClosedError:
-                logging.warning("Connection closed, attempting to reconnect...")
+                logger.warning("Connection closed, attempting to reconnect...")
                 break
             except Exception as e:
-                logging.error(f"An error occurred: {e}")
+                logger.error(f"An error occurred: {e}")
                 break
 
     async def _connect(self):
@@ -108,7 +107,7 @@ class SmartBuilding:
             try:
                 async with connect(self.uri) as ws:
                     self._ws = ws
-                    logging.info("WebSocket connection established.")
+                    logger.info("WebSocket connection established.")
 
                     set_actions_message = {
                         "type": "registerActions",
@@ -122,8 +121,8 @@ class SmartBuilding:
                         await self._event_handlers['on_ready']()
                     await self._handle_messages()
             except Exception as e:
-                logging.error(f"An error occurred: {e}")
-                logging.info(f"Reconnecting in {self._reconnect_interval} seconds...")
+                logger.error(f"An error occurred: {e}")
+                logger.info(f"Reconnecting in {self._reconnect_interval} seconds...")
                 await asyncio.sleep(self._reconnect_interval)
 
     def run(self):

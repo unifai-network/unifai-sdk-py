@@ -43,3 +43,4 @@ coverage.xml
 
 # Other
 *.log
+local/
