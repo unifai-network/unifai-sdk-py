@@ -1,16 +1,17 @@
 import logging
 
-logger = logging.getLogger('agiverse')
-logger.setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 if not logger.hasHandlers():
     handler = logging.StreamHandler()
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        f'%(asctime)s - {__name__} - %(levelname)s - %(message)s'
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+from .agent import Agent
 from .smart_building import ActionContext, SmartBuilding
 
-__all__ = ['ActionContext', 'SmartBuilding']
+__all__ = ['Agent', 'ActionContext', 'SmartBuilding']

@@ -3,6 +3,7 @@ import json
 import logging
 from websockets import connect, ConnectionClosedError
 from .context import ActionContext
+from ..common.const import DEFAULT_WS_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,10 @@ class SmartBuilding:
         self._ws = None
         self._reconnect_interval = reconnect_interval
         self._reconnect = True
-        self.set_endpoint("wss://backend.agiverse.io/ws")
+        self.set_ws_endpoint(DEFAULT_WS_ENDPOINT)
 
-    def set_endpoint(self, endpoint):
-        self.uri = f"{endpoint}?type=building&api-key={self.api_key}&building-id={self.building_id}"
+    def set_ws_endpoint(self, endpoint):
+        self.ws_uri = f"{endpoint}?type=building&api-key={self.api_key}&building-id={self.building_id}"
 
     def event(self, func):
         """
@@ -105,7 +106,7 @@ class SmartBuilding:
     async def _connect(self):
         while self._reconnect:
             try:
-                async with connect(self.uri) as ws:
+                async with connect(self.ws_uri) as ws:
                     self._ws = ws
                     logger.info("WebSocket connection established.")
 
