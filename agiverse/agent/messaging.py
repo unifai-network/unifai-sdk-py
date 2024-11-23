@@ -12,12 +12,10 @@ import websockets
 from datetime import datetime
 from .data import DataTypes
 from .utils import (
+    distance_obj,
     is_valid_state_data,
     is_valid_map_data,
-    is_nearby_building,
     is_valid_player_data,
-    is_nearby_player,
-    nearest_house,
     remove_additional_data,
     seconds_since,
 )
@@ -170,21 +168,58 @@ class MessagingHandler:
             self.agent._save_data(DataTypes.SERVER_MESSAGE, message)
 
         if is_valid_state_data(self.state_data) and is_valid_map_data(self.map_data, 'buildings'):
-            nearby_map = {'buildings': []}
+            nearby_map = {'buildings': [], 'my_houses': []}
             for building in self.map_data['buildings']:
+                building['distance'] = distance_obj(building['entrance'], self.state_data)
+
+            sorted_buildings = sorted(
+                self.map_data['buildings'],
+                key=lambda b: b.get('distance', float('inf'))
+            )
+
+            for building in sorted_buildings:
                 remove_additional_data(building)
-                if is_nearby_building(building, self.state_data, self.agent.vision_range_buildings):
-                    nearby_map['buildings'].append(building)
-            if self.assets_data:
-                rented_buildings = self.assets_data.get('rentedBuildings', [])
-                nearby_map['nearest_house'] = nearest_house(rented_buildings, self.state_data)
+                distance = building.get('distance', float('inf'))
+                if distance > self.agent.vision_range_buildings and len(nearby_map['buildings']) >= self.agent.min_num_buildings:
+                    break
+                nearby_map['buildings'].append(building)
+
+            if is_valid_map_data(self.assets_data, 'rentedBuildings'):
+                for building in self.assets_data['rentedBuildings']:
+                    building['distance'] = distance_obj(building['entrance'], self.state_data)
+
+                sorted_rented_buildings = sorted(
+                    self.assets_data['rentedBuildings'],
+                    key=lambda b: b.get('distance', float('inf'))
+                )
+
+                for building in sorted_rented_buildings:
+                    remove_additional_data(building)
+                    distance = building.get('distance', float('inf'))
+                    if distance > self.agent.vision_range_buildings and len(nearby_map['my_houses']) >= self.agent.min_num_buildings:
+                        break
+                    nearby_map['my_houses'].append(building)
+
             self.nearby_map = nearby_map
 
         if is_valid_state_data(self.state_data) and is_valid_player_data(self.players_data):
             nearby_players = []
             for player in self.players_data:
-                if is_nearby_player(player, self.state_data, self.agent.vision_range_players):
-                    nearby_players.append(player)
+                player['distance'] = distance_obj(player, self.state_data)
+
+            sorted_players = sorted(
+                self.players_data,
+                key=lambda p: p.get('distance', float('inf'))
+            )
+
+            for player in sorted_players:
+                if player.get('playerID') == self.state_data.get('playerID'):
+                    continue
+                distance = player.get('distance', float('inf'))
+                if distance > self.agent.vision_range_players and len(nearby_players) >= self.agent.min_num_players:
+                    break
+                nearby_players.append(player)
+
             self.nearby_players = nearby_players
 
         return msg_type == 'tickEnd'

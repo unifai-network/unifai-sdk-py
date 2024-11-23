@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 class Agent:
     vision_range_buildings = 16
     vision_range_players = 16
+    min_num_buildings = 10
+    min_num_players = 10
 
     def __init__(self, api_key, name, data_dir='data', prompts={}):
         self.api_key = api_key

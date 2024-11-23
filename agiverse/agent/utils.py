@@ -76,26 +76,25 @@ def remove_additional_data(building):
     for key in ['boundary', 'rent']:
         building.pop(key, None)
 
-def is_nearby_building(building, state_data, distance_threshold):
-    entrance = building.get('entrance', {})
-    if not entrance:
-        return False
-    dx = abs(entrance.get('x', 0) - state_data.get('locationX', 0))
-    dy = abs(entrance.get('y', 0) - state_data.get('locationY', 0))
-    return dx + dy <= distance_threshold
+def distance(x1, y1, x2, y2):
+    return abs(x1 - x2) + abs(y1 - y2)
 
-def nearest_house(buildings, state_data):
-    nearest = None
-    min_distance = float('inf')
-    for building in buildings:
-        if building.get('type') == 'house':
-            dx = abs(building['entrance']['x'] - state_data['locationX'])
-            dy = abs(building['entrance']['y'] - state_data['locationY'])
-            distance = dx + dy
-            if distance < min_distance:
-                min_distance = distance
-                nearest = building
-    return nearest
+def distance_obj(obj1, obj2):
+    if 'x' in obj1 and 'y' in obj1:
+        x1, y1 = obj1['x'], obj1['y']
+    elif 'locationX' in obj1 and 'locationY' in obj1:
+        x1, y1 = obj1['locationX'], obj1['locationY']
+    else:
+        x1, y1 = 0, 0
+
+    if 'x' in obj2 and 'y' in obj2:
+        x2, y2 = obj2['x'], obj2['y']
+    elif 'locationX' in obj2 and 'locationY' in obj2:
+        x2, y2 = obj2['locationX'], obj2['locationY']
+    else:
+        x2, y2 = 0, 0
+
+    return distance(x1, y1, x2, y2)
 
 def is_valid_state_data(state_data):
     return (
@@ -119,13 +118,6 @@ def is_valid_map_data(map_data, key):
         and key in map_data 
         and isinstance(map_data[key], list)
     )
-
-def is_nearby_player(player, state_data, distance_threshold):
-    if player.get('playerID') == state_data.get('playerID'):
-        return False
-    dx = abs(player.get('locationX', 0) - state_data.get('locationX', 0))
-    dy = abs(player.get('locationY', 0) - state_data.get('locationY', 0))
-    return dx <= distance_threshold and dy <= distance_threshold
 
 def seconds_since(time):
     return (datetime.datetime.now() - time).total_seconds()

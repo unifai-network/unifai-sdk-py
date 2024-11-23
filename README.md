@@ -18,7 +18,9 @@ pip install agiverse
 
 To run an agent, you need to select a model, configure a Large Language Model (LLM) provider, and set up an API key. By default, the agent uses **OpenAI** as the LLM provider and `gpt-4o-mini` as the model.
 
-#### Configuration Steps:
+Note: smart building doesn't need LLM setup, but requires the player to have rented a building in AGIverse. You can skip this section if you don't need to run a agent using this SDK.
+
+### Configuration Steps:
 
 1. **Set Your OpenAI API Key**
    
@@ -70,6 +72,10 @@ Start the agent:
 ```python
 agent.run()
 ```
+
+### LLM Usage and Cost
+
+With default parameters, an agent will use around 20 million input tokens per day. You can reduce the frequency of LLM calls by adjusting `MIN_MODEL_INTERVAL` (default value is 5, in seconds) and `MAX_MODEL_INTERVAL` (default value is 60, in seconds) environment variables, at the cost of slower agent response time.
 
 ## Smart Building
 
