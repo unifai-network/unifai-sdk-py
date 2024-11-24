@@ -71,6 +71,19 @@ class Summarizer:
             character_info=character_info,
             data_stream=format_json(successful_summaries),
         )
-        final_summary_response = await self.agent.model_manager.get_model_response(final_prompt)
+
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f'Processing final summary, attempt {attempt + 1}/{max_retries}')
+                final_summary_response = await self.agent.model_manager.get_model_response(final_prompt)
+                logger.info('Finished processing final summary')
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f'Final summary failed attempt {attempt + 1}: {str(e)}. Retrying...')
+                    await asyncio.sleep(5 * (2 ** attempt))
+                else:
+                    logger.error(f'Final summary failed all {max_retries} attempts: {str(e)}')
+                    raise
         
         return final_summary_response
