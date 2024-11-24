@@ -46,7 +46,7 @@ class Summarizer:
                     except Exception as e:
                         if attempt < max_retries - 1:
                             logger.warning(f'Batch {i // batch_size + 1} failed attempt {attempt + 1}: {str(e)}. Retrying...')
-                            await asyncio.sleep(1 * (attempt + 1))
+                            await asyncio.sleep(5 * (2 ** attempt))
                         else:
                             logger.error(f'Batch {i // batch_size + 1} failed all {max_retries} attempts: {str(e)}')
                             return None

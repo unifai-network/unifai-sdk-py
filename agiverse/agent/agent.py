@@ -34,7 +34,7 @@ class Agent:
     def run(self):
         asyncio.run(self._start())
 
-    async def summarize(self, since_hours=24, batch_size=256, concurrency=10, max_retries=3):
+    async def summarize(self, since_hours=24, batch_size=256, concurrency=8, max_retries=4):
         return await self.summarizer.summarize(since_hours, batch_size, concurrency, max_retries)
 
     def get_all_prompts(self):

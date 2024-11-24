@@ -1,4 +1,3 @@
--e git+ssh://git@github.com/agiverse/agiverse-py.git@7594f6834c1841f60479db3cb975ab0adf0ab3c6#egg=agiverse
 aiohappyeyeballs==2.4.3
 aiohttp==3.11.7
 aiosignal==1.3.1

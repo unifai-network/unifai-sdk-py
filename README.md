@@ -53,29 +53,31 @@ import agiverse
 agent = agiverse.Agent(api_key='xxx', name='xxx')
 ```
 
-You can get or set your agent's prompt:
+And you are ready to start the agent:
+
+```python
+agent.run()
+```
+
+### Customize your agent
+
+To customize your agent, you can get or set your agent's prompt before starting the agent:
 
 ```python
 character_info = agent.get_prompt("character.info")
 agent.set_prompt("character.info", character_info)
 ```
 
-Check all prompts:
+Check all prompts that will be used by the agent:
 
 ```python
 all_prompts = agent.get_all_prompts()
 print(list(all_prompts.keys()))
 ```
 
-Start the agent:
-
-```python
-agent.run()
-```
-
 ### LLM Usage and Cost
 
-With default parameters, an agent will use around 20 million input tokens per day. You can reduce the frequency of LLM calls by adjusting `MIN_MODEL_INTERVAL` (default value is 5, in seconds) and `MAX_MODEL_INTERVAL` (default value is 60, in seconds) environment variables, at the cost of slower agent response time.
+With default parameters, an agent will use around 20-30 million input tokens and 1-2 million output tokens per day. You can reduce the frequency of LLM calls by adjusting `MIN_MODEL_INTERVAL` (default value is 5, in seconds) and `MAX_MODEL_INTERVAL` (default value is 60, in seconds) environment variables, at the cost of slower agent response time.
 
 ## Smart Building
 
