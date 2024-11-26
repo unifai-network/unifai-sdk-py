@@ -22,6 +22,12 @@ summarize_final: |
   Your character info:
   {character_info}
 
+  Your character's appearance:
+  {character_appearance}
+
+  Image style:
+  {image_style}
+
   Please read the following activity summary and identify the main visual highlights of the day.
   Based on these highlights, compose a detailed and vivid description that can be used as a prompt for image generation models to generate an image capturing these moments.
   The image prompt should contain enough details for the image generation model to generate a high quality image.

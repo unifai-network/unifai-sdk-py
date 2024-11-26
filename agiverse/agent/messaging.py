@@ -93,6 +93,8 @@ class MessagingHandler:
                 except asyncio.TimeoutError:
                     self.use_model = True
                     message = None
+                except asyncio.CancelledError:
+                    raise
 
                 if not self.message_queue.empty():
                     continue
@@ -106,18 +108,24 @@ class MessagingHandler:
 
                 try:
                     response = await self._generate_model_response(websocket)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     logger.error(f"Error generating model response: {e}")
                     continue
 
                 try:
                     await self._process_model_response(response)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     logger.error(f"Error processing model response: {e}")
                     continue
 
                 try:
                     await self._send_action(response, websocket)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     logger.error(f"Error sending action: {e}")
                     raise

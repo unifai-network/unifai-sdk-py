@@ -22,10 +22,18 @@ class ModelManager:
         self.agent = agent
         self.usage_history = []
         self.max_history_hours = 24
+        self.chat_completion = litellm.acompletion
+        self.image_generation = litellm.aimage_generation
+
+    def set_chat_completion_function(self, f):
+        self.chat_completion = f
+
+    def set_image_generation_function(self, f):
+        self.image_generation = f
 
     async def get_model_response(self, prompt):
         response = await asyncio.wait_for(
-            litellm.acompletion(
+            self.chat_completion(
                 model=os.getenv('MODEL', 'gpt-4o-mini'),
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
@@ -81,3 +89,22 @@ class ModelManager:
             'current_time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         })
         return prompt.format(**kwargs)
+
+    async def generate_image(self, prompt, max_retries=5):
+        for attempt in range(max_retries):
+            try:
+                response = await asyncio.wait_for(
+                    self.image_generation(
+                        model='dall-e-3',
+                        quality='hd',
+                        size='1792x1024',
+                        prompt=prompt,
+                    ),
+                    timeout=os.getenv('IMAGE_GENERATION_TIMEOUT', 120),
+                )
+                return response
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                print(f"Attempt {attempt + 1} failed. Retrying...")
+                await asyncio.sleep(5 * (2 ** attempt))
