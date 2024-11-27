@@ -55,9 +55,9 @@ class MessagingHandler:
     async def __aexit__(self, exc_type, exc, tb):
         await self.websocket.close()
 
-    async def handle_messages(self, websocket):
-        receive_task = asyncio.create_task(self._receive_messages(websocket))
-        process_task = asyncio.create_task(self._process_messages(websocket))
+    async def handle_messages(self, websocket, stop_event):
+        receive_task = asyncio.create_task(self._receive_messages(websocket, stop_event))
+        process_task = asyncio.create_task(self._process_messages(websocket, stop_event))
 
         done, pending = await asyncio.wait(
             [receive_task, process_task],
@@ -75,19 +75,29 @@ class MessagingHandler:
             except asyncio.CancelledError:
                 logger.info(f"Task {task} has been cancelled successfully.")
 
-    async def _receive_messages(self, websocket):
+    async def _receive_messages(self, websocket, stop_event):
         try:
             async for message in websocket:
+                if stop_event.is_set():
+                    logger.info("Stop event detected. Exiting handle_messages.")
+                    break
                 await self.message_queue.put(json.loads(message))
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"Receive messages - Connection closed: {e}")
             raise
 
-    async def _process_messages(self, websocket):
+    async def _process_messages(self, websocket, stop_event):
         try:
             while True:
+                if stop_event.is_set():
+                    logger.info("Stop event detected. Exiting handle_messages.")
+                    break
+
                 try:
                     message = await asyncio.wait_for(self.message_queue.get(), timeout=60)
+                    if stop_event.is_set():
+                        logger.info("Stop event detected. Exiting handle_messages.")
+                        break
                     if not await self._process_message(message):
                         continue
                 except asyncio.TimeoutError:

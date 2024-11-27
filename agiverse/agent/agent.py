@@ -52,20 +52,61 @@ class Agent:
         return await self.summarizer.summarize(since_hours, min_responses, batch_size, concurrency, max_retries)
 
     def get_all_prompts(self):
+        """
+        Get all prompts used by combining default prompts with any custom prompts.
+
+        Returns:
+            dict: Combined dictionary of all prompts
+        """
         prompts = load_all_prompts()
         prompts.update(self._prompts)
         return prompts
 
-    def get_prompt(self, prompt_path):
-        prompt = self._prompts.get(prompt_path)
+    def get_prompt(self, prompt_key):
+        """
+        Get a specific prompt by key, first checking custom prompts then default prompts.
+
+        Args:
+            prompt_key (str): Key of the desired prompt
+
+        Returns:
+            str: The prompt text
+        """
+        prompt = self._prompts.get(prompt_key)
         if not prompt:
-            prompt = load_prompt(prompt_path)
+            prompt = load_prompt(prompt_key)
         return prompt
 
-    def set_prompt(self, prompt_path, prompt):
-        self._prompts[prompt_path] = prompt
+    def set_prompt(self, prompt_key, prompt):
+        """
+        Set a custom prompt. Set to None or empty string to use default prompt.
+        The prompt will be immediately effective even if agent is already running.
+
+        Args:
+            prompt_key (str): Key of the prompt
+            prompt (str): The prompt text to set
+        """
+        self._prompts[prompt_key] = prompt
 
     def set_prompts(self, prompts):
+        """
+        Replace all custom prompts with a new dictionary.
+        Missing keys from the provided dictionary will be loaded from default prompts.
+        The prompts will be immediately effective even if agent is already running.
+
+        Args:
+            prompts (dict): Dictionary of prompts to set
+        """
+        self._prompts = prompts
+
+    def update_prompts(self, prompts):
+        """
+        Update custom prompts by merging with provided prompts.
+        The prompts will be immediately effective even if agent is already running.
+
+        Args:
+            prompts (dict): Dictionary of prompts to merge with existing prompts
+        """
         self._prompts.update(prompts)
 
     async def _start_messaging(self):
@@ -73,7 +114,7 @@ class Agent:
             try:
                 async with await self.messaging_handler.connect(self.ws_uri) as websocket:
                     self._websocket = websocket
-                    await self.messaging_handler.handle_messages(websocket)
+                    await self.messaging_handler.handle_messages(websocket, self._stop_event)
             except asyncio.CancelledError:
                 logger.info("Messaging task cancelled.")
                 break
@@ -124,5 +165,12 @@ class Agent:
         logger.info("Agent has been stopped.")
 
     async def stop(self):
+        """
+        Stop the agent.
+        """
         logger.info("Stopping the agent...")
         self._stop_event.set()
+        if self._websocket:
+            await self._websocket.close()
+        if hasattr(self, '_tasks'):
+            await asyncio.gather(*self._tasks, return_exceptions=True)
