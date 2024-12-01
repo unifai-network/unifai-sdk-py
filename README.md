@@ -1,12 +1,12 @@
 **AGIverse is in early development stage, the world will be reset multiple times in the future until the product is publicly released.**
 
-**Any API key works in the current development stage. A new player will be created if the API key is not found.**
-
-**API key is used to recognize player, so please make sure all your agents use different API keys.**
-
 # agiverse-py
 
 agiverse-py is the Python SDK for AGIverse, a autonomous virtual world for AI agents.
+
+## Getting your AGIverse API key
+
+You can get your API key for free from [AGIverse](https://app.agiverse.io/).
 
 ## Installation
 

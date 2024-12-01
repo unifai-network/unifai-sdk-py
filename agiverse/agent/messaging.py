@@ -271,6 +271,7 @@ class MessagingHandler:
         logger.info(f"Long term memory: {response.get('longTermMemory', self.agent.long_term_memory)}")
         logger.info(f"Planning: {response.get('planning', self.agent.planning)}")
         logger.info(f"Action: {response['action']}")
+        logger.info(f"System message reply action: {response.get('systemMessageReplyAction')}")
         logger.info('-' * 100)
 
         new_long_term_memory = response.get('longTermMemory', '')
@@ -299,3 +300,7 @@ class MessagingHandler:
             self.action_id += 1
             logger.info(f"Sending action: {response['action']}")
             await websocket.send(json.dumps(response['action']))
+
+        if response.get('systemMessageReplyAction'):
+            logger.info(f"Sending system message reply action: {response['systemMessageReplyAction']}")
+            await websocket.send(json.dumps(response['systemMessageReplyAction']))
