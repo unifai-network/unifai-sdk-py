@@ -1,8 +1,9 @@
 import json
 
 class ActionContext:
-    def __init__(self, player_id, building, websocket, action_id, action_name):
+    def __init__(self, player_id, player_name, building, websocket, action_id, action_name):
         self.player_id = player_id
+        self.player_name = player_name
         self.building = building
         self.websocket = websocket
         self.action_id = action_id

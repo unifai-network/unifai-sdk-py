@@ -15,7 +15,6 @@ class SmartBuilding:
         :param api_key: Your API key.
         :param building_id: The building ID to connect to.
         :param reconnect_interval: Time in seconds between reconnection attempts.
-        :param endpoint: The WebSocket endpoint URL to connect to.
         """
         self.api_key = api_key
         self.building_id = building_id
@@ -87,6 +86,7 @@ class SmartBuilding:
                     if action_handler:
                         ctx = ActionContext(
                             player_id=msg["data"].get("playerID"),
+                            player_name=msg["data"].get("playerName"),
                             building=self,
                             websocket=self._ws,
                             action_id=msg["data"].get("actionID"),

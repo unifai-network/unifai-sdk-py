@@ -107,7 +107,7 @@ Register action handlers:
 @building.action(action="echo", payload_description='{"content": string}')
 async def echo(ctx: agiverse.ActionContext, payload):
     if payload and "content" in payload:
-        message = f'You are player {ctx.player_id}.'
+        message = f'You are {ctx.player_name} <{ctx.player_id}>.'
         message += f' You said "{payload["content"]}".'
         message += f' There are {len(ctx.building.players)} players in the building now.'
         await ctx.send_result(message)

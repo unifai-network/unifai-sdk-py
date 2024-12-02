@@ -60,6 +60,7 @@ tokenizers==0.20.3
 tqdm==4.67.0
 twine==5.1.1
 types-PyYAML==6.0.12.20240917
+types-requests==2.32.0.20241016
 typing_extensions==4.12.2
 urllib3==2.2.3
 websockets==14.1

@@ -24,7 +24,7 @@ async def on_players(players):
 @building.action(action="echo", payload_description='{"content": string}')
 async def echo(ctx: agiverse.ActionContext, payload):
     if payload and "content" in payload:
-        await ctx.send_result(f'You are player {ctx.player_id}, you said "{payload["content"]}". There are {len(ctx.building.players)} players in the building now.')
+        await ctx.send_result(f'You are {ctx.player_name} <{ctx.player_id}>, you said "{payload["content"]}". There are {len(ctx.building.players)} players in the building now.')
     else:
         await ctx.send_result({"error": "You didn't say anything!"})
 
