@@ -40,12 +40,12 @@ class Summarizer:
                 for attempt in range(max_retries):
                     try:
                         logger.debug(f'Processing batch {i // batch_size + 1}, attempt {attempt + 1}/{max_retries}')
-                        prompt = self.agent.get_prompt('summarize.summarize_one_batch').format(
+                        response = await self.agent.get_model_response(
+                            'summarize.summarize_one_batch',
                             character_name=self.agent.name,
                             character_info=character_info,
                             data_stream=format_json(batch),
                         )
-                        response = await self.agent.model_manager.get_model_response(prompt)
                         summary = response.get('summary', '')
                         logger.info(f'Finished processing batch {i // batch_size + 1}')
                         logger.debug(f'Batch {i // batch_size + 1} summary:\n{summary}\n--------\n')
@@ -73,18 +73,17 @@ class Summarizer:
         if not successful_summaries:
             raise Exception("All batches failed after retries. Cannot generate final summary.")
 
-        final_prompt = self.agent.get_prompt('summarize.summarize_final').format(
-            character_name=self.agent.name,
-            character_info=character_info,
-            character_appearance=character_appearance,
-            image_style=image_style,
-            data_stream=format_json(successful_summaries),
-        )
-
         for attempt in range(max_retries):
             try:
                 logger.debug(f'Processing final summary, attempt {attempt + 1}/{max_retries}')
-                final_summary_response = await self.agent.model_manager.get_model_response(final_prompt)
+                final_summary_response = await self.agent.get_model_response(
+                    'summarize.summarize_final',
+                    character_name=self.agent.name,
+                    character_info=character_info,
+                    character_appearance=character_appearance,
+                    image_style=image_style,
+                    data_stream=format_json(successful_summaries),
+                )
                 logger.info('Finished processing final summary')
                 break
             except Exception as e:

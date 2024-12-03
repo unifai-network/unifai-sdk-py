@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import litellm
-from .utils import format_json, format_memory
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +30,10 @@ class ModelManager:
     def set_image_generation_function(self, f):
         self.image_generation = f
 
-    async def get_model_response(self, prompt):
+    async def get_model_response(self, prompt, prompt_key='default'):
         response = await asyncio.wait_for(
             self.chat_completion(
-                model=os.getenv('MODEL', 'gpt-4o-mini'),
+                model=self.agent.get_model(prompt_key),
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
             ),
@@ -74,21 +73,6 @@ class ModelManager:
             'input_tokens': sum(stat[1] for stat in filtered_stats),
             'output_tokens': sum(stat[2] for stat in filtered_stats)
         }
-
-    def construct_prompt(self, prompt, **kwargs):
-        kwargs.update({
-            'map_str': format_json(kwargs.get('map_data', {})),
-            'players_str': format_json(kwargs.get('players_data', [])),
-            'assets_str': format_json(kwargs.get('assets_data', {})),
-            'inventory_str': format_json(kwargs.get('inventory_data', {})),
-            'state_str': format_json(kwargs.get('state_data', {})),
-            'available_actions_str': format_json(kwargs.get('available_actions', [])),
-            'system_messages_str': format_json(kwargs.get('system_messages', [])),
-            'messages_str': format_json(kwargs.get('messages', [])),
-            'memory_str': format_memory(kwargs.get('memory', [])),
-            'current_time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        })
-        return prompt.format(**kwargs)
 
     async def generate_image(self, prompt, max_retries=5):
         for attempt in range(max_retries):

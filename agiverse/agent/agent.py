@@ -23,11 +23,12 @@ class Agent:
         self.name = name
         self.data_dir = data_dir
         self._prompts = {}
+        self._models = { 'default': 'gpt-4o-mini' }
         self._websocket = None
         self.messaging_handler = MessagingHandler(self)
         self.model_manager = ModelManager(self)
         self.summarizer = Summarizer(self)
-        self.memory = []
+        self.working_memory = []
         self.long_term_memory = None
         self.planning = None
         self.api = API(self.api_key)
@@ -108,6 +109,56 @@ class Agent:
             prompts (dict): Dictionary of prompts to merge with existing prompts
         """
         self._prompts.update(prompts)
+
+    def get_model(self, prompt_key):
+        """
+        Get the model for a specific prompt key, falling back to default model if not found.
+
+        Args:
+            prompt_key (str): Key to look up model for
+
+        Returns:
+            str: The model name to use
+        """
+        return self._models.get(prompt_key, self._models.get('default'))
+
+    def set_model(self, prompt_key, model):
+        """
+        Set the model to use for a specific prompt key.
+        Set the model of key 'default' to set the default model.
+        The model will be immediately effective even if agent is already running.
+
+        Args:
+            prompt_key (str): Key to set model for
+            model (str): Name of the model to use
+        """
+        self._models[prompt_key] = model
+
+    async def get_model_response(self, prompt_key, **kwargs):
+        prompt = self.get_prompt(prompt_key).format(**kwargs)
+        return await self.model_manager.get_model_response(prompt, prompt_key=prompt_key)
+
+    def set_models(self, models):
+        """
+        Replace all custom models with a new dictionary.
+        The model of key 'default' will be used as the default model.
+        The models will be immediately effective even if agent is already running.
+
+        Args:
+            models (dict): Dictionary mapping prompt keys to model names
+        """
+        self._models = models
+
+    def update_models(self, models):
+        """
+        Update custom models by merging with provided models.
+        The model of key 'default' will be used as the default model.
+        The models will be immediately effective even if agent is already running.
+
+        Args:
+            models (dict): Dictionary of models to merge with existing models
+        """
+        self._models.update(models)
 
     async def _start_messaging(self):
         while not self._stop_event.is_set():

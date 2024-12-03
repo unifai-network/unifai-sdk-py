@@ -18,6 +18,8 @@ from .utils import (
     is_valid_player_data,
     remove_additional_data,
     seconds_since,
+    format_json,
+    format_memory,
 )
 
 logger = logging.getLogger(__name__)
@@ -243,24 +245,23 @@ class MessagingHandler:
         return msg_type == 'tickEnd'
 
     async def _generate_model_response(self, websocket):
-        prompt = self.agent.model_manager.construct_prompt(
-            self.agent.get_prompt('agent.agent'),
+        return await self.agent.get_model_response(
+            'agent.agent',
             character_name=self.agent.name,
             character_info=self.agent.get_prompt('character.info'),
-            map_data=self.nearby_map,
-            players_data=self.nearby_players,
-            assets_data=self.assets_data,
-            inventory_data=self.inventory_data,
-            state_data=self.state_data,
-            available_actions=self.available_actions,
-            memory=self.agent.memory,
+            nearby_map=format_json(self.nearby_map),
+            nearby_players=format_json(self.nearby_players),
+            assets=format_json(self.assets_data),
+            inventory=format_json(self.inventory_data),
+            state=format_json(self.state_data),
+            available_actions=format_json(self.available_actions),
+            working_memory=format_memory(self.agent.working_memory),
             long_term_memory=self.agent.long_term_memory,
             planning=self.agent.planning,
-            system_messages=self.system_messages,
-            messages=self.other_data
+            system_messages=format_json(self.system_messages),
+            messages=format_json(self.other_data),
+            current_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         )
-
-        return await self.agent.model_manager.get_model_response(prompt)
 
     async def _process_model_response(self, response):
         self.agent._save_data(DataTypes.MODEL_RESPONSE, response)
@@ -282,9 +283,9 @@ class MessagingHandler:
         if new_planning:
             self.agent.planning = new_planning
 
-        self.agent.memory.append(response)
-        if len(self.agent.memory) > 10:
-            self.agent.memory.pop(0)
+        self.agent.working_memory.append(response)
+        if len(self.agent.working_memory) > 10:
+            self.agent.working_memory.pop(0)
 
         self.system_messages = []
         self.other_data = []

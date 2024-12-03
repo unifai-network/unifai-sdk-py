@@ -66,7 +66,7 @@ agent: |
   Current time: {current_time}
 
   Recent memory (from earliest to latest):
-  {memory_str}
+  {working_memory}
 
   Long term memory:
   {long_term_memory}
@@ -75,28 +75,28 @@ agent: |
   {planning}
 
   Nearby map (move to building entrance if you want to enter a building):
-  {map_str}
+  {nearby_map}
 
   Nearby players:
-  {players_str}
+  {nearby_players}
 
   Your assets:
-  {assets_str}
+  {assets}
 
   Your inventory:
-  {inventory_str}
+  {inventory}
 
   Your current state:
-  {state_str}
+  {state}
 
   Available actions:
-  {available_actions_str}
+  {available_actions}
 
   System messages (always reply IMMEDIATELY if it contains replyAction):
-  {system_messages_str}
+  {system_messages}
 
   Other messages received from server:
-  {messages_str}
+  {messages}
 
   As a reminder, you should think through the situation step by step, considering your observations and reasoning before deciding on an action. Use the JSON format as output:
 
