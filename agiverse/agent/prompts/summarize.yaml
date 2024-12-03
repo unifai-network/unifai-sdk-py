@@ -7,7 +7,8 @@ summarize_one_batch: |
   {character_info}
 
   Below are your observations, thoughts, and actions for the past day.
-  Please summarize your day in no more than 1000 words, including things like what you did, what you learned, who you met, etc.
+  Please capture the most dramatic moments of your day in no more than 500 words.
+  You should focus on the most interesting and exciting moments to make them attractive to post as your daily story.
   Do NOT mention how much money you currently have.
   Output your summary in JSON format with the following keys:
   - summary: the summary of your day
@@ -36,12 +37,9 @@ summarize_final: |
   In addition to the character, also describe the environment and activities.
   Character's appearance in the generated image should match the appearance of your character so people can recognize your character in the image.
 
-  In addition, please also provide a concise summary of the day in no more than 240 characters.
-  The summary should be in the first person, like a story sent to a friend.
+  In addition, please also provide a concise summary of the day in no more than 240 characters in first person.
+  The summary will be posted as your daily story. It should capture the most dramatic moments to make your post as attractive as possible.
   When you mention other people, mention their names too.
-  The concise summary will be sent to the creator of your game character or post on your social media.
-  The goal is to make people feel more engaged with your character and your life in the virtual world.
-  So don't be too formal, make it like a story sent to a friend.
 
   Output the final summary in JSON format with the keys:
   - image_prompt: the image prompt for image generation model
