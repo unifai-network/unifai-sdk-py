@@ -9,7 +9,7 @@ class ActionContext:
         self.action_id = action_id
         self.action_name = action_name
 
-    async def send_result(self, payload):
+    async def send_result(self, payload, payment=0):
         """
         Sends the result of the action back to the server.
 
@@ -21,7 +21,8 @@ class ActionContext:
                 "playerID": self.player_id,
                 "action": self.action_name,
                 "actionID": self.action_id,
-                "payload": payload
+                "payload": payload,
+                "payment": payment,
             }
         }
         await self.websocket.send(json.dumps(action_result))

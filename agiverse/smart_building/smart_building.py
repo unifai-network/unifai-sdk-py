@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 from websockets import connect, ConnectionClosedError
@@ -37,14 +38,15 @@ class SmartBuilding:
         self._event_handlers[func.__name__] = func
         return func
 
-    def action(self, action, payload_description=''):
+    def action(self, action, payload_description='', payment_description=''):
         """
         Decorator to register an action handler.
         """
         def decorator(func):
             self._action_handlers[action] = {
                 'func': func,
-                'payload_description': payload_description
+                'payload_description': payload_description,
+                'payment_description': payment_description
             }
             return func
         return decorator
@@ -93,7 +95,18 @@ class SmartBuilding:
                             action_name=action_name
                         )
                         payload = msg["data"].get("payload")
-                        await action_handler['func'](ctx, payload)
+                        payment = msg["data"].get("payment")
+
+                        num_params = len(inspect.signature(action_handler['func']).parameters)
+
+                        if num_params == 1:
+                            await action_handler['func'](ctx)
+                        elif num_params == 2:
+                            await action_handler['func'](ctx, payload)
+                        elif num_params == 3:
+                            await action_handler['func'](ctx, payload, payment)
+                        else:
+                            logger.warning(f"Handler for action '{action_name}' has an unexpected number of parameters")
                     else:
                         logger.warning(f"No handler for action '{action_name}'")
             except ConnectionClosedError:
@@ -113,7 +126,13 @@ class SmartBuilding:
                     set_actions_message = {
                         "type": "registerActions",
                         "data": {
-                            "actions": { action: handler['payload_description'] for action, handler in self._action_handlers.items() }
+                            "actions": {
+                                action: {
+                                    'payload': handler['payload_description'],
+                                    'payment': handler['payment_description']
+                                }
+                                for action, handler in self._action_handlers.items()
+                            }
                         }
                     }
                     await self._ws.send(json.dumps(set_actions_message))

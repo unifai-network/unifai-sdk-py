@@ -4,6 +4,8 @@ aiosignal==1.3.1
 annotated-types==0.7.0
 anyio==4.6.2.post1
 attrs==24.2.0
+boto3==1.35.74
+botocore==1.35.74
 build==1.2.2.post1
 certifi==2024.8.30
 charset-normalizer==3.4.0
@@ -24,10 +26,11 @@ jaraco.context==6.0.1
 jaraco.functools==4.1.0
 Jinja2==3.1.4
 jiter==0.7.1
+jmespath==1.0.1
 jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
 keyring==25.5.0
-litellm==1.52.12
+litellm==1.53.4
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
 mdurl==0.1.2
@@ -36,7 +39,7 @@ multidict==6.1.0
 mypy==1.13.0
 mypy-extensions==1.0.0
 nh3==0.2.18
-openai==1.55.0
+openai==1.56.2
 packaging==24.2
 pkginfo==1.10.0
 propcache==0.2.0
@@ -44,6 +47,7 @@ pydantic==2.10.1
 pydantic_core==2.27.1
 Pygments==2.18.0
 pyproject_hooks==1.2.0
+python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 PyYAML==6.0.2
 readme_renderer==44.0
@@ -54,6 +58,8 @@ requests-toolbelt==1.0.0
 rfc3986==2.0.0
 rich==13.9.4
 rpds-py==0.21.0
+s3transfer==0.10.4
+six==1.16.0
 sniffio==1.3.1
 tiktoken==0.8.0
 tokenizers==0.20.3

@@ -25,7 +25,16 @@ async def on_players(players):
 async def echo(ctx: agiverse.ActionContext, payload):
     if payload and "content" in payload:
         await ctx.send_result(f'You are {ctx.player_name} <{ctx.player_id}>, you said "{payload["content"]}". There are {len(ctx.building.players)} players in the building now.')
-    else:
-        await ctx.send_result({"error": "You didn't say anything!"})
+
+@building.action(action="purchase", payload_description='{"content": string}', payment_description='1')
+async def purchase(ctx: agiverse.ActionContext, payload, payment):
+    # do something
+    if payment > 1:
+        await ctx.send_result("You are charged $1 for this action!", payment=1)
+
+@building.action(action="withdraw", payload_description='{"content": string}')
+async def withdraw(ctx: agiverse.ActionContext, payload, payment):
+    # do something
+    await ctx.send_result("You are getting paid $1 for this action!", payment=-1)
 
 building.run()

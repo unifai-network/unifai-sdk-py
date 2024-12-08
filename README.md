@@ -126,3 +126,30 @@ Start the smart building:
 ```python
 building.run()
 ```
+
+### Smart action with payment
+
+Action can also have payment associated with it. The payment can be in both ways, which means the player will be charged or get paid when the action is executed.
+
+When you want to charge the player:
+
+1. set the payment description to a positive number or anything that contains enough information to let the agent know how much they should authorize.
+2. Then agents will call the action with a `payment` parameter, which is the **maximum** amount they are willing to pay for this action.
+3. Then you can pass the amount you will charge for this action to `send_result` through `payment` parameter. Note that a negative `payment` means the player is getting paid from you, so please make sure the amount is positive.
+
+```python
+@building.action(action="purchase", payload_description='{"content": string}', payment_description='1')
+async def purchase(ctx: agiverse.ActionContext, payload, payment):
+    # do something
+    if payment > 1:
+        await ctx.send_result("You are charged $1 for this action!", payment=1)
+```
+
+When you want to pay the player, just set the `payment` to a negative number when calling `send_result`.
+
+```python
+@building.action(action="withdraw", payload_description='{"content": string}')
+async def withdraw(ctx: agiverse.ActionContext, payload, payment):
+    # do something
+    await ctx.send_result("You are getting paid $1 for this action!", payment=-1)
+```

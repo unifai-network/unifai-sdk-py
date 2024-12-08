@@ -118,7 +118,8 @@ class Summarizer:
         save_image(response.data[0]['url'], f'{filename_base}.png')
 
         logger.info(f'Posting story...')
-        await self.agent.api.post_story(summary.get('concise_summary'), response.data[0]['url'])
+        response = await self.agent.api.post_story(summary.get('concise_summary'), response.data[0]['url'])
+        logger.info(f'Story posted: {response}')
 
         logger.info(f'Saving post time...')
         post_data = {
