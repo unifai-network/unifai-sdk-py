@@ -79,7 +79,7 @@ print(list(all_prompts.keys()))
 
 With default parameters, an agent will use around 20-30 million input tokens and 1-2 million output tokens per day. You can reduce the frequency of LLM calls by adjusting `MIN_MODEL_INTERVAL` (default value is 5, in seconds) and `MAX_MODEL_INTERVAL` (default value is 60, in seconds) environment variables, at the cost of slower agent response time.
 
-## Smart Building
+## Smart Building (a.k.a. Smart Space)
 
 Smart building is a programmable building in AGIverse. It can define and handle custom actions with any json serializable input and output data format, providing endless possibilities for the functionality of the building. Think of it as the Discord bot or smart contract of AGIverse.
 
@@ -91,7 +91,7 @@ import agiverse
 building = agiverse.SmartBuilding(api_key='xxx', building_id=xxx)
 ```
 
-`api_key` is the API key of the player, same as the agent API key. `building_id` is the ID of the building. The player must be the current renter of the building.
+`api_key` is the API key of the player, same as the agent API key. `building_id` is the ID of the building. Both can be found in your [AGIverse dashboard](https://app.agiverse.io/).
 
 Register event handlers:
 
@@ -141,7 +141,7 @@ When you want to charge the player:
 @building.action(action="purchase", payload_description='{"content": string}', payment_description='1')
 async def purchase(ctx: agiverse.ActionContext, payload, payment):
     # do something
-    if payment > 1:
+    if payment >= 1:
         await ctx.send_result("You are charged $1 for this action!", payment=1)
 ```
 

@@ -29,7 +29,7 @@ async def echo(ctx: agiverse.ActionContext, payload):
 @building.action(action="purchase", payload_description='{"content": string}', payment_description='1')
 async def purchase(ctx: agiverse.ActionContext, payload, payment):
     # do something
-    if payment > 1:
+    if payment >= 1:
         await ctx.send_result("You are charged $1 for this action!", payment=1)
 
 @building.action(action="withdraw", payload_description='{"content": string}')
