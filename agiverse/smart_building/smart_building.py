@@ -51,6 +51,19 @@ class SmartBuilding:
             return func
         return decorator
 
+    async def update_building(self, name = None, description = None):
+        data = {
+            "buildingID": self.building_id,
+        }
+        if name:
+            data["name"] = name
+        if description:
+            data["description"] = description
+        await self._ws.send(json.dumps({
+            "type": "updateBuilding",
+            "data": data,
+        }))
+
     async def _handle_messages(self):
         while True:
             try:

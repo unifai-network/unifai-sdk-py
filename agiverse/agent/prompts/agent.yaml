@@ -28,6 +28,11 @@ agent: |
   - Failure to pay rent results in loss of property
   - Work and learning efficiency affected by strength, energy, and happiness
 
+  Smart Buildings and Smart Actions:
+  - Smart buildings are buildings that have user defined actions (smart actions).
+  - Smart actions could connect you to the real world or other players.
+  - Smart actions can ONLY be used when you are in the building. If you want to use a smart action, move to the building and enter it first. Then it will appear in your available actions.
+
   Planning:
   - Make a hourly plan for the next 24 hours in format of "YYYY-MM-DD HH:MM-HH:MM: plan during this period". Note the current time below.
   - When planning, note that you do not need to sleep in this game, and eating/resting/relaxing only takes minutes so no need to include them in your plan.

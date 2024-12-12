@@ -119,7 +119,7 @@ class MessagingHandler:
                         continue
 
                 try:
-                    response = await self._generate_model_response(websocket)
+                    response = await self._generate_model_response()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -188,7 +188,12 @@ class MessagingHandler:
             self.agent._save_data(DataTypes.SERVER_MESSAGE, message)
 
         if is_valid_state_data(self.state_data) and is_valid_map_data(self.map_data, 'buildings'):
-            nearby_map = {'buildings': [], 'my_houses': []}
+            nearby_map = {
+                'buildings': [],
+                'smart_buildings': [],
+                'my_houses': []
+            }
+
             for building in self.map_data['buildings']:
                 building['distance'] = distance_obj(building['entrance'], self.state_data)
 
@@ -203,6 +208,11 @@ class MessagingHandler:
                 if distance > self.agent.vision_range_buildings and len(nearby_map['buildings']) >= self.agent.min_num_buildings:
                     break
                 nearby_map['buildings'].append(building)
+
+            for building in sorted_buildings:
+                remove_additional_data(building)
+                if len(building.get('smartActions', {})) > 0:
+                    nearby_map['smart_buildings'].append(building)
 
             if is_valid_map_data(self.assets_data, 'rentedBuildings'):
                 for building in self.assets_data['rentedBuildings']:
@@ -244,7 +254,7 @@ class MessagingHandler:
 
         return msg_type == 'tickEnd'
 
-    async def _generate_model_response(self, websocket):
+    async def _generate_model_response(self):
         return await self.agent.get_model_response(
             'agent.agent',
             character_name=self.agent.name,

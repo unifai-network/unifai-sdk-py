@@ -12,6 +12,7 @@ building = agiverse.SmartBuilding(api_key="YOUR_API_KEY", building_id="YOUR_BUIL
 @building.event
 async def on_ready():
     logging.info(f"Smart building {building.building_id} is ready to use")
+    await building.update_building(name="Echo Slam", description="What's in, what's out.")
 
 @building.event
 async def on_building_info(building_info):

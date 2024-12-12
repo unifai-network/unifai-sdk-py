@@ -89,6 +89,6 @@ class ModelManager:
                 return response
             except Exception as e:
                 if attempt == max_retries - 1:
-                    raise
-                print(f"Attempt {attempt + 1} failed. Retrying...")
+                    raise e
+                logger.error(f"Attempt {attempt + 1} failed. Retrying... Error: {e}")
                 await asyncio.sleep(5 * (2 ** attempt))

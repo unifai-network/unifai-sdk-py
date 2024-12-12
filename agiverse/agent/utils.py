@@ -1,6 +1,9 @@
 import datetime
+import logging
 import os
 import yaml
+
+logger = logging.getLogger(__name__)
 
 def load_prompt(prompt_path):
     parts = prompt_path.split('.')
@@ -37,9 +40,9 @@ def load_all_prompts():
                     for key, value in data.items():
                         all_prompts[f"{file_name}.{key}"] = value
                 else:
-                    print(f"Warning: {filename} does not contain a valid YAML dictionary.")
+                    logger.warning(f"{filename} does not contain a valid YAML dictionary.")
             except Exception as e:
-                print(f"Error reading {filename}: {e}")
+                logger.error(f"Error reading {filename}: {e}")
     
     return all_prompts
 
