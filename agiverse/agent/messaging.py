@@ -21,6 +21,7 @@ from .utils import (
     format_json,
     format_memory,
 )
+from .memory.base import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +255,13 @@ class MessagingHandler:
 
         return msg_type == 'tickEnd'
 
-    async def _generate_model_response(self):
+    async def _generate_model_response(self, websocket):
+        last_memory_step = self.agent.working_memory.get_last_step()
+        working_memory_content = last_memory_step.to_string() if last_memory_step else ""
+        all_memories = await self.agent.memory_manager.memory_stream.get_all_memories()
+        
+        long_term_memory = await self._filter_and_rank_memories(working_memory_content, all_memories)
+        
         return await self.agent.get_model_response(
             'agent.agent',
             character_name=self.agent.name,
@@ -265,8 +272,8 @@ class MessagingHandler:
             inventory=format_json(self.inventory_data),
             state=format_json(self.state_data),
             available_actions=format_json(self.available_actions),
-            working_memory=format_memory(self.agent.working_memory),
-            long_term_memory=self.agent.long_term_memory,
+            working_memory=self.agent.working_memory.steps_to_string(),
+            long_term_memory=long_term_memory,
             planning=self.agent.planning,
             system_messages=format_json(self.system_messages),
             messages=format_json(self.other_data),
@@ -279,24 +286,19 @@ class MessagingHandler:
         logger.info('-' * 100)
         logger.info(f"Observation: {response['observation']}")
         logger.info(f"Thought: {response['thought']}")
-        logger.info(f"Long term memory: {response.get('longTermMemory', self.agent.long_term_memory)}")
         logger.info(f"Planning: {response.get('planning', self.agent.planning)}")
         logger.info(f"Action: {response['action']}")
         logger.info(f"System message reply action: {response.get('systemMessageReplyAction')}")
         logger.info('-' * 100)
 
-        new_long_term_memory = response.get('longTermMemory', '')
-        if new_long_term_memory:
-            self.agent.long_term_memory = new_long_term_memory
 
         new_planning = response.get('planning', '')
         if new_planning:
             self.agent.planning = new_planning
-
-        self.agent.working_memory.append(response)
-        if len(self.agent.working_memory) > 10:
-            self.agent.working_memory.pop(0)
-
+        await self.agent._handle_model_response(response, self.state_data)
+        logger.error(f"Working memory size: {len(self.agent.working_memory)}")
+        await self.agent.working_memory._compress_steps()
+            
         self.system_messages = []
         self.other_data = []
         self.last_prompt_time = datetime.now()
@@ -315,3 +317,49 @@ class MessagingHandler:
         if response.get('systemMessageReplyAction'):
             logger.info(f"Sending system message reply action: {response['systemMessageReplyAction']}")
             await websocket.send(json.dumps(response['systemMessageReplyAction']))
+
+    async def _filter_and_rank_memories(self, working_memory_content: str, all_memories: List[Memory]) -> List[Memory]:
+        if not (working_memory_content and all_memories and self.state_data):
+            return []
+
+        current_memory = Memory(
+            content=working_memory_content,
+            type="working_memory",
+            created_at=datetime.now()
+        )
+        current_memory_embedding = await self.agent.embedding_generator.get_embedding(current_memory.content, self.agent._models['embedding'])
+        current_memory.embedding = current_memory_embedding
+        
+        memory_importance = await self.agent.importance_calculator.calculate_relevance(
+            current_memory,
+            datetime.now(),
+            all_memories
+        )
+        current_pos = (self.state_data.get('locationX', 0), self.state_data.get('locationY', 0))
+        filtered_indices = []
+        for i, memory in enumerate(all_memories):
+            if not memory.metadata or 'location' not in memory.metadata:
+                continue
+            memory_pos = (
+                memory.metadata['location'].get('locationX', 0),
+                memory.metadata['location'].get('locationY', 0)
+            )
+            
+            distance = abs(current_pos[0] - memory_pos[0]) + abs(current_pos[1] - memory_pos[1])
+            
+            if distance <= self.agent.vision_range_buildings:
+                filtered_indices.append(i)
+        if filtered_indices:
+            filtered_importance = [memory_importance[i] for i in filtered_indices]
+            top_k = min(3, len(filtered_indices))
+            top_indices = sorted(range(len(filtered_importance)), 
+                               key=lambda i: filtered_importance[i],
+                               reverse=True)[:top_k]
+            return [all_memories[filtered_indices[i]] for i in top_indices]
+        else:
+            top_k = min(3, len(all_memories))
+            top_indices = sorted(range(len(memory_importance)),
+                               key=lambda i: memory_importance[i],
+                               reverse=True)[:top_k]
+            return [all_memories[i] for i in top_indices]
+

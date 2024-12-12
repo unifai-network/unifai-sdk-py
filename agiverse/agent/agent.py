@@ -1,12 +1,19 @@
 import asyncio
 import logging
+from typing import List, Dict
 from .api import API
 from .data import save_data
 from .messaging import MessagingHandler
 from .model import ModelManager
 from .summary import Summarizer
+from datetime import datetime
 from .utils import load_prompt, load_all_prompts
 from ..common.const import DEFAULT_WS_ENDPOINT, DEFAULT_API_ENDPOINT
+from .memory.manager import MemoryManager
+from .memory.importance import ImportanceCalculator
+from .memory.embedding import EmbeddingGenerator
+from .memory.working_memory import WorkingMemory
+from .memory.base import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -17,20 +24,34 @@ class Agent:
     min_num_players = 10
     post_story = True
     post_story_interval_hours = 24
+    working_memory_max_size = 10
 
     def __init__(self, api_key, name, data_dir='data'):
         self.api_key = api_key
         self.name = name
         self.data_dir = data_dir
         self._prompts = {}
-        self._models = { 'default': 'gpt-4o-mini' }
+        self._models = { 'default': 'gpt-4o-mini','embedding': 'text-embedding-3-small' }
         self._websocket = None
-        self.messaging_handler = MessagingHandler(self)
         self.model_manager = ModelManager(self)
-        self.summarizer = Summarizer(self)
-        self.working_memory = []
-        self.long_term_memory = None
+        self.importance_calculator = ImportanceCalculator(self.model_manager)
+        self.embedding_generator = EmbeddingGenerator(self.model_manager)
+        self.memory_manager = MemoryManager(
+            importance_calculator=self.importance_calculator,
+            embedding_generator=self.embedding_generator,
+            models=self._models,
+            data_dir=self.data_dir,
+        )
         self.planning = None
+        self.working_memory = WorkingMemory(
+            memory_manager=self.memory_manager,
+            max_size=self.working_memory_max_size,
+            llm_model=self._models['default'],
+            model_manager=self.model_manager
+        )
+        
+        self.messaging_handler = MessagingHandler(self)
+        self.summarizer = Summarizer(self)
         self.api = API(self.api_key)
         self.set_ws_endpoint(DEFAULT_WS_ENDPOINT)
         self.set_api_endpoint(DEFAULT_API_ENDPOINT)
@@ -225,3 +246,28 @@ class Agent:
             await self._websocket.close()
         if hasattr(self, '_tasks'):
             await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def _handle_model_response(self, response: Dict, state_data: Dict) -> None:
+        thought = response.get('thought')
+        action = response.get('action')
+        action_input = response.get('actionInput')
+        observation = response.get('observation')
+        
+        metadata = {
+            "response_type": response.get('type'),
+            "system_message_reply": response.get('systemMessageReplyAction'),
+            "timestamp": datetime.now().isoformat()
+        }
+        metadata.update({
+                    "location": {
+                        "locationX": state_data.get('locationX'),
+                        "locationY": state_data.get('locationY')
+                    }
+                })
+        await self.working_memory.add_step(
+            thought=thought,
+            action=action,
+            action_input=action_input,
+            observation=observation,
+            metadata=metadata
+        )

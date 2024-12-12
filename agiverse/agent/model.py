@@ -23,9 +23,13 @@ class ModelManager:
         self.max_history_hours = 24
         self.chat_completion = litellm.acompletion
         self.image_generation = litellm.aimage_generation
+        self.embedding = litellm.aembedding
 
     def set_chat_completion_function(self, f):
         self.chat_completion = f
+
+    def set_embedding_function(self, f):
+        self.embedding = f
 
     def set_image_generation_function(self, f):
         self.image_generation = f
