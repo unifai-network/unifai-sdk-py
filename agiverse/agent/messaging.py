@@ -327,7 +327,7 @@ class MessagingHandler:
             type="working_memory",
             created_at=datetime.now()
         )
-        current_memory_embedding = await self.agent.embedding_generator.get_embedding(current_memory.content, self.agent._models['embedding'])
+        current_memory_embedding = await self.agent.embedding_generator.get_embedding(current_memory.content, self.agent.get_model('embedding'))
         current_memory.embedding = current_memory_embedding
         
         memory_importance = await self.agent.importance_calculator.calculate_relevance(

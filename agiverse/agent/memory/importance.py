@@ -4,7 +4,6 @@ import numpy as np
 import json
 from tenacity import retry, stop_after_attempt, wait_exponential
 from .base import Memory, MemoryStream
-from ..utils import load_all_prompts
 import os
 import logging
 

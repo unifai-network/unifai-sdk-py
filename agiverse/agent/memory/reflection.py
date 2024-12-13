@@ -1,8 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
-import numpy as np
-from ..utils import load_all_prompts
+import numpy as nps
 from .base import Memory
 from .manager import MemoryManager
 from .spatial import SpatialMemory
