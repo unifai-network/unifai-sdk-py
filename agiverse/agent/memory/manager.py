@@ -16,7 +16,7 @@ class MemoryManager:
                         associated_agents: List[str] = None,
                         importance_prompt: str = None,
                         metadata: Dict = None, model: str = None) -> Memory:
-        embedding = np.array(await self.embedding_generator.get_embedding(content, self.agent.get_model('embedding'))
+        embedding = np.array(await self.embedding_generator.get_embedding(content, self.agent.get_model('embedding')))
         memory = Memory(content=content, type=memory_type,
                        associated_agents=associated_agents,
                        metadata=metadata, embedding=embedding)

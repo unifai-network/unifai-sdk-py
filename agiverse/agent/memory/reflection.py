@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
-import numpy as nps
+import numpy as np
 from .base import Memory
 from .manager import MemoryManager
 from .spatial import SpatialMemory
@@ -10,15 +10,8 @@ import logging
 logger = logging.getLogger(__name__)
 class MemoryReflection:
     def __init__(self, agent):
-        self.reflection_prompt = self._load_reflection_prompt()['agent.compress_memory']
         self.agent = agent
 
-    def _load_reflection_prompt(self) -> str:
-        try:
-            return load_all_prompts()
-        except Exception as e:
-            logger.error(f"Error loading importance prompt: {e}")
-            return ''
     # To be used
     def _filter_by_time(self, memories: List[Memory],
                        start_time: Optional[datetime] = None,
