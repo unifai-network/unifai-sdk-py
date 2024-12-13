@@ -11,17 +11,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 class ImportanceCalculator:
-    def __init__(self, model_manager):
+    def __init__(self, agent):
         self.time_weight = 0.3
         self.relevance_weight = 0.7
-        self.importance_prompt = self._load_importance_prompt()['agent.importance']
-        self.model_manager = model_manager
-    def _load_importance_prompt(self) -> str:
-        try:
-            return load_all_prompts()
-        except Exception as e:
-            logger.error(f"Error loading importance prompt: {e}")
-            return ''
+        self.agent = agent
 
     async def calculate_relevance(self, memory: Memory, current_time: datetime,
                                 related_memories: List[Memory]) -> float:
@@ -35,36 +28,14 @@ class ImportanceCalculator:
         ]
         return importance
 
-    async def calculate_memory_importance(self, memory: Memory, model: str) -> float:
+    async def calculate_memory_importance(self, memory: Memory) -> float:
         try:
-            prompt = self.importance_prompt.format(
-                memory_content=memory.content
-            )
-            response = await self.model_manager.chat_completion(
-                model=model,
-                messages=[{
-                    "role": "system",
-                    "content": "You are an expert at evaluating the importance of memories and information."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }],
-                temperature=0.3,
-                response_format={"type": "json_object"}
+            response = await self.agent.get_model_response(
+            'agent.importance',
+            memory_content=memory.content
             )
 
-            try:
-                result = json.loads(response.choices[0].message.content)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {e}")
-                return 0.05
-
-            if not isinstance(result, dict):
-                logger.error("Response is not a dictionary")
-                return 0.05
-
-            importance_score = result.get("importance_score")
+            importance_score = response.get("importance_score")
             if importance_score is None:
                 logger.error("Missing importance_score in response")
                 return 0.05
@@ -75,10 +46,10 @@ class ImportanceCalculator:
                 logger.error("Invalid importance_score format")
                 return 0.05
 
-            if "reasoning" in result:
-                logger.debug(f"Memory importance calculation: {result['reasoning']}")
+            if "reasoning" in response:
+                logger.debug(f"Memory importance calculation: {response['reasoning']}")
             return max(0.0, min(1.0, importance_score))
-            
+        
         except Exception as e:
             logger.error(f"Error calculating memory importance: {str(e)}")
             return 0.05

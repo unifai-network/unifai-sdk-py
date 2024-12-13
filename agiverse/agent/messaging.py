@@ -120,7 +120,7 @@ class MessagingHandler:
                         continue
 
                 try:
-                    response = await self._generate_model_response()
+                    response = await self._generate_model_response(websocket)
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

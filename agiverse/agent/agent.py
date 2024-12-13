@@ -1,6 +1,7 @@
+from __future__ import annotations
 import asyncio
 import logging
-from typing import List, Dict
+from typing import TYPE_CHECKING, List, Dict
 from .api import API
 from .data import save_data
 from .messaging import MessagingHandler
@@ -24,7 +25,7 @@ class Agent:
     min_num_players = 10
     post_story = True
     post_story_interval_hours = 24
-    working_memory_max_size = 10
+    working_memory_max_size = 2
 
     def __init__(self, api_key, name, data_dir='data'):
         self.api_key = api_key
@@ -34,20 +35,19 @@ class Agent:
         self._models = { 'default': 'gpt-4o-mini','embedding': 'text-embedding-3-small' }
         self._websocket = None
         self.model_manager = ModelManager(self)
-        self.importance_calculator = ImportanceCalculator(self.model_manager)
+        self.importance_calculator = ImportanceCalculator(self)
         self.embedding_generator = EmbeddingGenerator(self.model_manager)
         self.memory_manager = MemoryManager(
             importance_calculator=self.importance_calculator,
             embedding_generator=self.embedding_generator,
-            models=self._models,
+            agent=self,
             data_dir=self.data_dir,
         )
         self.planning = None
         self.working_memory = WorkingMemory(
             memory_manager=self.memory_manager,
             max_size=self.working_memory_max_size,
-            llm_model=self._models['default'],
-            model_manager=self.model_manager
+            agent=self,
         )
         
         self.messaging_handler = MessagingHandler(self)

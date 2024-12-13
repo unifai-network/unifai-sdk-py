@@ -1,12 +1,12 @@
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
 from .base import Memory
 from .reflection import MemoryReflection
 from .manager import MemoryManager
-from ..model import ModelManager
-from tenacity import retry, stop_after_attempt, wait_exponential
 
+if TYPE_CHECKING:
+    from ..agent import Agent
 
 @dataclass
 class MemoryStep:
@@ -44,12 +44,12 @@ class MemoryStep:
         )
 
 class WorkingMemory:
-    def __init__(self, memory_manager: MemoryManager, max_size: int = 10, llm_model: str = "gpt-4o-mini", model_manager: ModelManager = None):
+    def __init__(self, max_size: int = 10, agent: Optional["Agent"] = None, memory_manager: MemoryManager = None):
         self.max_size = max_size
         self.steps = []
         self.memory_manager = memory_manager
-        self.llm_model = llm_model
-        self.memory_reflection = MemoryReflection(model_manager=model_manager)
+        self.agent = agent
+        self.memory_reflection = MemoryReflection(agent=agent)
 
     def __len__(self) -> int:
         return len(self.steps)
@@ -98,8 +98,7 @@ class WorkingMemory:
             memories_to_compress.append(memory)
         
         for memory in memories_to_compress:
-            compressed_content = await self.memory_reflection.compress_memory_content(memory,
-            model=self.llm_model)
+            compressed_content = await self.memory_reflection.compress_memory_content(memory)
             metadata = memory.metadata or {}
             metadata.update({
                 "compressed": True,

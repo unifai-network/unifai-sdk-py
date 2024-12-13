@@ -6,12 +6,13 @@ from ..utils import load_all_prompts
 from .base import Memory
 from .manager import MemoryManager
 from .spatial import SpatialMemory
+import logging
 
-
+logger = logging.getLogger(__name__)
 class MemoryReflection:
-    def __init__(self, model_manager):
+    def __init__(self, agent):
         self.reflection_prompt = self._load_reflection_prompt()['agent.compress_memory']
-        self.model_manager = model_manager
+        self.agent = agent
 
     def _load_reflection_prompt(self) -> str:
         try:
@@ -99,28 +100,16 @@ class MemoryReflection:
             
         return " ".join(formatted_parts)
 
-    async def compress_memory_content(self, memory: Memory, max_length: int = 500, model: str = None) -> str:
-        prompt = self.reflection_prompt.format(
-            max_length=max_length,
-            memory=memory
-        )
-
-        response = await self.model_manager.chat_completion(
-            model=model,
-            messages=[{
-                "role": "system",
-                "content": "You are an expert at summarizing and compressing information while maintaining key details."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }],
-            temperature=0.3,
-            max_tokens=max_length
-        )
-
+    async def compress_memory_content(self, memory: Memory, max_length: int = 500) -> str:
         try:
-            compressed = response.choices[0].message.content.strip()
+            response = await self.agent.get_model_response(
+                'agent.compress_memory',
+                memory_content=memory.content,
+                max_length=max_length 
+            )
+            
+            compressed = response.get('compressed_content', '')
             return compressed[:min(len(compressed), max_length)]
-        except (AttributeError, IndexError):
+        except Exception as e:
+            logger.error(f"Error compressing memory content: {e}")
             return memory.content[:max_length]

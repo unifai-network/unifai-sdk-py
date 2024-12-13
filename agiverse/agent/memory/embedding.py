@@ -3,6 +3,8 @@ import numpy as np
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+logger = logging.getLogger(__name__)
+
 class EmbeddingGenerator:
     def __init__(self, model_manager):
         self.dimension = 1536  
