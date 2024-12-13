@@ -261,11 +261,16 @@ class MessagingHandler:
         working_memory_content = last_memory_step.to_string() if last_memory_step else ""
         all_memories = await self.agent.memory_manager.memory_stream.get_all_memories()
         long_term_memory = await self._filter_and_rank_memories(working_memory_content, all_memories)
+        character_info = self.agent.get_prompt('character.info')
+        system_prompt = self.agent.get_prompt('agent.system').format(
+            character_name=self.agent.name,
+            character_info=character_info,
+        )
 
         return await self.agent.get_model_response(
             'agent.agent',
-            character_name=self.agent.name,
-            character_info=self.agent.get_prompt('character.info'),
+            character_name=self.agent.name, # for compatibility with old prompt
+            character_info=character_info, # for compatibility with old prompt
             nearby_map=format_json(self.nearby_map),
             nearby_players=format_json(self.nearby_players),
             assets=format_json(self.assets_data),
@@ -278,6 +283,7 @@ class MessagingHandler:
             system_messages=format_json(self.system_messages),
             messages=format_json(self.other_data),
             current_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            system_prompt=system_prompt,
         )
 
     async def _process_model_response(self, response):

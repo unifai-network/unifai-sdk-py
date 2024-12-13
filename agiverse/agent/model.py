@@ -34,11 +34,15 @@ class ModelManager:
     def set_image_generation_function(self, f):
         self.image_generation = f
 
-    async def get_model_response(self, prompt, prompt_key='default'):
+    async def get_model_response(self, prompt, prompt_key='default', system_prompt=None):
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         response = await asyncio.wait_for(
             self.chat_completion(
                 model=self.agent.get_model(prompt_key),
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 response_format={"type": "json_object"},
             ),
             timeout=os.getenv('MODEL_TIMEOUT', 60),

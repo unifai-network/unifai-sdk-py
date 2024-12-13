@@ -155,9 +155,9 @@ class Agent:
         """
         self._models[prompt_key] = model
 
-    async def get_model_response(self, prompt_key, **kwargs):
+    async def get_model_response(self, prompt_key, system_prompt=None, **kwargs):
         prompt = self.get_prompt(prompt_key).format(**kwargs)
-        return await self.model_manager.get_model_response(prompt, prompt_key=prompt_key)
+        return await self.model_manager.get_model_response(prompt, prompt_key=prompt_key, system_prompt=system_prompt)
 
     def set_models(self, models):
         """
