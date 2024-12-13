@@ -157,4 +157,3 @@ compress_memory: |
 
   Return a JSON object with the format:
   {{"compressed_content": "your compressed content here"}}
-

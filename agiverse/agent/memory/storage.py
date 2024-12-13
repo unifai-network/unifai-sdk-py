@@ -6,7 +6,10 @@ import numpy as np
 import aiofiles
 import asyncio
 from collections import deque
+import logging
 from .base import Memory
+
+logger = logging.getLogger(__name__)
 
 class LocalStorage:
     def __init__(self, persist_directory: str, max_batch_size: int = 100):
@@ -30,7 +33,7 @@ class LocalStorage:
                         self._write_batch.clear()
                         await self._batch_write(batch)
             except Exception as e:
-                print(f"Error in write worker: {e}")
+                logger.error(f"Error in write worker: {e}")
                 await asyncio.sleep(1)
                 
     async def _batch_write(self, memories: List[Memory]):

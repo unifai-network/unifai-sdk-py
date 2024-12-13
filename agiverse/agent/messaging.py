@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -10,6 +10,7 @@ import time
 import os
 import websockets
 from datetime import datetime
+from typing import List
 from .data import DataTypes
 from .utils import (
     distance_obj,
@@ -120,7 +121,7 @@ class MessagingHandler:
                         continue
 
                 try:
-                    response = await self._generate_model_response(websocket)
+                    response = await self._generate_model_response()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -255,13 +256,12 @@ class MessagingHandler:
 
         return msg_type == 'tickEnd'
 
-    async def _generate_model_response(self, websocket):
+    async def _generate_model_response(self):
         last_memory_step = self.agent.working_memory.get_last_step()
         working_memory_content = last_memory_step.to_string() if last_memory_step else ""
         all_memories = await self.agent.memory_manager.memory_stream.get_all_memories()
-        
         long_term_memory = await self._filter_and_rank_memories(working_memory_content, all_memories)
-        
+
         return await self.agent.get_model_response(
             'agent.agent',
             character_name=self.agent.name,
@@ -291,19 +291,46 @@ class MessagingHandler:
         logger.info(f"System message reply action: {response.get('systemMessageReplyAction')}")
         logger.info('-' * 100)
 
-
         new_planning = response.get('planning', '')
         if new_planning:
             self.agent.planning = new_planning
-        await self.agent._handle_model_response(response, self.state_data)
-        logger.error(f"Working memory size: {len(self.agent.working_memory)}")
+
+        await self._add_working_memory(response, self.state_data)
+
+        logger.info(f"Working memory size: {len(self.agent.working_memory)}")
+
         await self.agent.working_memory._compress_steps()
-            
+
         self.system_messages = []
         self.other_data = []
         self.last_prompt_time = datetime.now()
         self.use_model = False
         self.model_interval = self.min_model_interval
+
+    async def _add_working_memory(self, response: Dict, state_data: Dict) -> None:
+        thought = response.get('thought')
+        action = response.get('action')
+        action_input = response.get('actionInput')
+        observation = response.get('observation')
+
+        metadata = {
+            "response_type": response.get('type'),
+            "system_message_reply": response.get('systemMessageReplyAction'),
+            "timestamp": datetime.now().isoformat()
+        }
+        metadata.update({
+            "location": {
+                "locationX": state_data.get('locationX'),
+                "locationY": state_data.get('locationY')
+            }
+        })
+        await self.agent.working_memory.add_step(
+            thought=thought,
+            action=action,
+            action_input=action_input,
+            observation=observation,
+            metadata=metadata
+        )
 
     async def _send_action(self, response, websocket):
         if not response.get('action') or response['action'].get('action') == 'no action':
@@ -362,4 +389,3 @@ class MessagingHandler:
                                key=lambda i: memory_importance[i],
                                reverse=True)[:top_k]
             return [all_memories[i] for i in top_indices]
-

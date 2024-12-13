@@ -1,10 +1,7 @@
-from typing import List, Optional, Union
+from typing import List, Union
 from datetime import datetime
 import numpy as np
-import json
-from tenacity import retry, stop_after_attempt, wait_exponential
-from .base import Memory, MemoryStream
-import os
+from .base import Memory
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,8 +27,8 @@ class ImportanceCalculator:
     async def calculate_memory_importance(self, memory: Memory) -> float:
         try:
             response = await self.agent.get_model_response(
-            'agent.importance',
-            memory_content=memory.content
+                'agent.importance',
+                memory_content=memory.content,
             )
 
             importance_score = response.get("importance_score")

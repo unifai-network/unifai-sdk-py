@@ -113,6 +113,7 @@ class WorkingMemory:
             )
         self.steps = []
         self.clear()
+
     def steps_to_string(self) -> str:
         if not self.steps:
             return "No steps recorded."

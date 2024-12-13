@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import logging
-from typing import TYPE_CHECKING, List, Dict
 from .api import API
 from .data import save_data
 from .messaging import MessagingHandler
@@ -14,7 +13,6 @@ from .memory.manager import MemoryManager
 from .memory.importance import ImportanceCalculator
 from .memory.embedding import EmbeddingGenerator
 from .memory.working_memory import WorkingMemory
-from .memory.base import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +23,17 @@ class Agent:
     min_num_players = 10
     post_story = True
     post_story_interval_hours = 24
-    working_memory_max_size = 2
+    working_memory_max_size = 10
 
     def __init__(self, api_key, name, data_dir='data'):
         self.api_key = api_key
         self.name = name
         self.data_dir = data_dir
         self._prompts = {}
-        self._models = { 'default': 'gpt-4o-mini','embedding': 'text-embedding-3-small' }
+        self._models = {
+            'default': 'gpt-4o-mini',
+            'embedding': 'text-embedding-3-small',
+        }
         self._websocket = None
         self.model_manager = ModelManager(self)
         self.importance_calculator = ImportanceCalculator(self)
@@ -41,7 +42,6 @@ class Agent:
             importance_calculator=self.importance_calculator,
             embedding_generator=self.embedding_generator,
             agent=self,
-            data_dir=self.data_dir,
         )
         self.planning = None
         self.working_memory = WorkingMemory(
@@ -246,28 +246,3 @@ class Agent:
             await self._websocket.close()
         if hasattr(self, '_tasks'):
             await asyncio.gather(*self._tasks, return_exceptions=True)
-
-    async def _handle_model_response(self, response: Dict, state_data: Dict) -> None:
-        thought = response.get('thought')
-        action = response.get('action')
-        action_input = response.get('actionInput')
-        observation = response.get('observation')
-        
-        metadata = {
-            "response_type": response.get('type'),
-            "system_message_reply": response.get('systemMessageReplyAction'),
-            "timestamp": datetime.now().isoformat()
-        }
-        metadata.update({
-                    "location": {
-                        "locationX": state_data.get('locationX'),
-                        "locationY": state_data.get('locationY')
-                    }
-                })
-        await self.working_memory.add_step(
-            thought=thought,
-            action=action,
-            action_input=action_input,
-            observation=observation,
-            metadata=metadata
-        )

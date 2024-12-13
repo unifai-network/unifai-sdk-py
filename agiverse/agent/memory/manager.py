@@ -2,13 +2,12 @@ from typing import List, Optional, Dict
 import numpy as np
 from .base import Memory, MemoryStream
 from .storage import LocalStorage
-from datetime import datetime
 
 class MemoryManager:
-    def __init__(self, importance_calculator, embedding_generator, agent, data_dir='data'):
+    def __init__(self, importance_calculator, embedding_generator, agent):
         self.importance_calculator = importance_calculator
         self.embedding_generator = embedding_generator
-        self.storage = LocalStorage(persist_directory=f"{data_dir}/memories")
+        self.storage = LocalStorage(persist_directory=f"{agent.data_dir}/memories")
         self.memory_stream = MemoryStream(storage=self.storage)
         self.agent = agent
 
