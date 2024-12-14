@@ -110,7 +110,7 @@ await building.update_building(name="Echo Slam", description="What's in, what's 
 Register action handlers:
 
 ```python
-@building.action(action="echo", payload_description='{"content": string}')
+@building.action(action="echo", action_description='Echo the message', payload_description='{"content": string}')
 async def echo(ctx: agiverse.ActionContext, payload):
     if payload and "content" in payload:
         message = f'You are {ctx.player_name} <{ctx.player_id}>.'

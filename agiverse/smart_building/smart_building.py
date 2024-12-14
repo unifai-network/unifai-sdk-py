@@ -38,13 +38,14 @@ class SmartBuilding:
         self._event_handlers[func.__name__] = func
         return func
 
-    def action(self, action, payload_description='', payment_description=''):
+    def action(self, action, action_description='', payload_description='', payment_description=''):
         """
         Decorator to register an action handler.
         """
         def decorator(func):
             self._action_handlers[action] = {
                 'func': func,
+                'action_description': action_description,
                 'payload_description': payload_description,
                 'payment_description': payment_description
             }
@@ -141,6 +142,7 @@ class SmartBuilding:
                         "data": {
                             "actions": {
                                 action: {
+                                    'description': handler['action_description'],
                                     'payload': handler['payload_description'],
                                     'payment': handler['payment_description']
                                 }
