@@ -92,6 +92,10 @@ class WorkingMemory:
         if len(self.steps) <= self.max_size:
             return
 
+        # will enable long term memory in the future
+        self.steps.pop(0)
+        return
+
         memories_to_compress = []
         for step in self.steps[-self.max_size:]:
             memory = await self._step_to_memory(step)

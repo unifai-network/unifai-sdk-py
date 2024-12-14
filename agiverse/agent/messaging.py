@@ -214,6 +214,8 @@ class MessagingHandler:
             for building in sorted_buildings:
                 remove_additional_data(building)
                 if len(building.get('smartActions', {})) > 0:
+                    if isinstance(building.get('smartActions'), dict):
+                        building['smartActions'] = list(building.get('smartActions', {}).keys())
                     nearby_map['smart_buildings'].append(building)
 
             if is_valid_map_data(self.assets_data, 'rentedBuildings'):
