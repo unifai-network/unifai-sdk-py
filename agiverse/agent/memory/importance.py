@@ -13,16 +13,11 @@ class ImportanceCalculator:
         self.agent = agent
 
     async def calculate_relevance(self, memory: Memory, current_time: datetime,
-                                related_memories: List[Memory]) -> float:
+                                related_memories: List[Memory]) -> tuple[List[float], List[float]]:
         memory_times = [m.created_at for m in related_memories]
         time_factor = self._calculate_time_decay(memory.created_at, memory_times)
         relevance_factor = await self._calculate_relevance(memory, related_memories)
-        
-        importance = [
-            min(max(self.time_weight * t + self.relevance_weight * r, 0.0), 1.0)
-            for t, r in zip(time_factor, relevance_factor)
-        ]
-        return importance
+        return time_factor, relevance_factor
 
     async def calculate_memory_importance(self, memory: Memory) -> float:
         try:
@@ -54,12 +49,12 @@ class ImportanceCalculator:
                          reference_times: Union[datetime, List[datetime]]) -> List[float]:
         if isinstance(reference_times, datetime):
             time_diff = (reference_times - memory_created_at).total_seconds()
-            return [1.0 / (1.0 + time_diff / (24 * 3600))]
+            return [abs(1.0 / (1.0 + time_diff / (24 * 3600)))]
         
         time_decays = []
         for ref_time in reference_times:
             time_diff = (ref_time - memory_created_at).total_seconds()
-            decay = 1.0 / (1.0 + time_diff / (24 * 3600))
+            decay = abs(1.0 / (1.0 + time_diff / (24 * 3600)))
             time_decays.append(decay)
             
         return time_decays

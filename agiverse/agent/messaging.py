@@ -353,9 +353,9 @@ class MessagingHandler:
             logger.info(f"Sending system message reply action: {response['systemMessageReplyAction']}")
             await websocket.send(json.dumps(response['systemMessageReplyAction']))
 
-    async def _filter_and_rank_memories(self, working_memory_content: str, all_memories: List[Memory]) -> List[Memory]:
+    async def _filter_and_rank_memories(self, working_memory_content: str, all_memories: List[Memory]) -> str:
         if not (working_memory_content and all_memories and self.state_data):
-            return []
+            return ""
 
         current_memory = Memory(
             content=working_memory_content,
@@ -365,11 +365,17 @@ class MessagingHandler:
         current_memory_embedding = await self.agent.embedding_generator.get_embedding(current_memory.content, self.agent.get_model('embedding'))
         current_memory.embedding = current_memory_embedding
         
-        memory_importance = await self.agent.importance_calculator.calculate_relevance(
+        time_factor, relevance_factor = await self.agent.importance_calculator.calculate_relevance(
             current_memory,
             datetime.now(),
             all_memories
         )
+
+        memory_importance = [
+            min(max(self.agent.importance_calculator.time_weight * t + self.agent.importance_calculator.relevance_weight * r, 0.0), 1.0)
+            for t, r in zip(time_factor, relevance_factor)
+        ]
+
         current_pos = (self.state_data.get('locationX', 0), self.state_data.get('locationY', 0))
         filtered_indices = []
         for i, memory in enumerate(all_memories):
@@ -381,19 +387,20 @@ class MessagingHandler:
             )
             
             distance = abs(current_pos[0] - memory_pos[0]) + abs(current_pos[1] - memory_pos[1])
-            
             if distance <= self.agent.vision_range_buildings:
                 filtered_indices.append(i)
         if filtered_indices:
             filtered_importance = [memory_importance[i] for i in filtered_indices]
             top_k = min(3, len(filtered_indices))
             top_indices = sorted(range(len(filtered_importance)), 
-                               key=lambda i: filtered_importance[i],
-                               reverse=True)[:top_k]
-            return [all_memories[filtered_indices[i]] for i in top_indices]
+                            key=lambda i: filtered_importance[i],
+                            reverse=True)[:top_k]
+            top_memories = [all_memories[filtered_indices[i]] for i in top_indices]
         else:
             top_k = min(3, len(all_memories))
             top_indices = sorted(range(len(memory_importance)),
-                               key=lambda i: memory_importance[i],
-                               reverse=True)[:top_k]
-            return [all_memories[i] for i in top_indices]
+                            key=lambda i: memory_importance[i],
+                            reverse=True)[:top_k]
+            top_memories = [all_memories[i] for i in top_indices]
+
+        return "\n".join(memory.content for memory in top_memories)

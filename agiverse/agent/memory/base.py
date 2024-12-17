@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from datetime import datetime
 import numpy as np
 import uuid
@@ -9,17 +9,34 @@ from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
+
 class Memory:
-    __slots__ = ('id', 'content', 'type', 'associated_agents', 'metadata',
-                 'embedding', 'importance_score', 'created_at', 'last_accessed')
-    
-    def __init__(self, content: str, type: str = "observation",
-                 associated_agents: List[str] = None, metadata: Dict = None,
-                 embedding: Optional[np.ndarray] = None, importance_score: float = 0.0,
-                 id: str = None, created_at: datetime = None,
-                 last_accessed: datetime = None):
+    __slots__ = (
+        "id",
+        "content",
+        "type",
+        "associated_agents",
+        "metadata",
+        "embedding",
+        "importance_score",
+        "created_at",
+        "last_accessed",
+    )
+
+    def __init__(
+    self,
+    content: str,
+    type: str = "observation",
+    associated_agents: Optional[List[str]] = None,
+    metadata: Optional[Dict] = None,
+    embedding: Optional[np.ndarray] = None,
+    importance_score: float = 0.0,
+    id: Optional[str] = None,
+    created_at: Optional[datetime] = None,
+    last_accessed: Optional[datetime] = None,
+):
         self.id = id or str(uuid.uuid4())
-        self.content = content 
+        self.content = content
         self.type = type
         self.associated_agents = associated_agents or []
         self.metadata = metadata or {}
@@ -33,13 +50,15 @@ class Memory:
         return {
             "id": self.id,
             "content": self.content,
-            "type": self.type, 
+            "type": self.type,
             "associated_agents": self.associated_agents,
             "metadata": self.metadata,
-            "embedding": self.embedding.tolist() if self.embedding is not None else None,
+            "embedding": (
+                self.embedding.tolist() if self.embedding is not None else None
+            ),
             "importance_score": self.importance_score,
             "created_at": self.created_at,
-            "last_accessed": self.last_accessed
+            "last_accessed": self.last_accessed,
         }
 
     @classmethod
@@ -48,18 +67,19 @@ class Memory:
             data["embedding"] = np.array(data["embedding"])
         return cls(**data)
 
+
 class MemoryStream:
     def __init__(self, storage=None, cache_size: int = 1000):
-        self.memories = OrderedDict()
+        self.memories: OrderedDict[str, Memory] = OrderedDict()
+        self._cache: OrderedDict[str, Memory] = OrderedDict()
+        self._save_queue: asyncio.Queue[Memory] = asyncio.Queue()
         self.storage = storage
         self._initialized = False
         self._initialization_lock = asyncio.Lock()
-        self._cache = OrderedDict()
         self._cache_size = cache_size
         self._batch_size = 100
-        self._save_queue = asyncio.Queue()
         self._save_task = None
-        
+
     async def _start_save_worker(self):
         while True:
             batch = []
@@ -86,18 +106,20 @@ class MemoryStream:
             self._cache.popitem(last=False)
 
     async def ensure_initialized(self):
-        if not self._initialized:
-            async with self._initialization_lock:
-                if not self._initialized:
-                    await self.initialize()
-                    self._initialized = True
-                    if self.storage:
-                        self._save_task = asyncio.create_task(self._start_save_worker())
+        async with self._initialization_lock:
+            if not self._initialized:
+                if self.storage:
+                    await self.storage.initialize()
+                await self.initialize()
+                self._initialized = True
+                if self.storage:
+                    self._save_task = asyncio.create_task(self._start_save_worker())
 
     async def initialize(self):
         if self.storage:
             try:
                 memories = await self.storage.list_all_memories()
+
                 tasks = []
                 for memory in memories:
                     tasks.append(self._process_memory(memory))
@@ -125,7 +147,7 @@ class MemoryStream:
 
     async def get_memory(self, memory_id: str) -> Optional[Memory]:
         if memory_id in self._cache:
-            memory = self._cache[memory_id]
+            memory: Optional[Memory] = self._cache[memory_id]
         else:
             memory = self.memories.get(memory_id)
             if memory is None and self.storage:
@@ -133,7 +155,6 @@ class MemoryStream:
                 if memory:
                     self.memories[memory_id] = memory
                     self._update_cache(memory_id, memory)
-        
         if memory:
             memory.last_accessed = datetime.now()
             if self.storage:
