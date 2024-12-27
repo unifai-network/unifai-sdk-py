@@ -28,6 +28,7 @@ class Memory:
     content: str,
     type: str = "observation",
     associated_agents: Optional[List[str]] = None,
+    channel_id: Optional[str] = None,
     metadata: Optional[Dict] = None,
     embedding: Optional[np.ndarray] = None,
     importance_score: float = 0.0,
@@ -166,7 +167,7 @@ class MemoryStream:
             self.memories[memory.id] = memory
             self._update_cache(memory.id, memory)
             if self.storage:
-                await self._save_queue.put(memory)
+                await self.storage.save_memory(memory)
 
     async def delete_memory(self, memory_id: str) -> bool:
         if memory_id in self.memories:
@@ -186,3 +187,24 @@ class MemoryStream:
     async def get_all_memories(self):
         await self.ensure_initialized()
         return list(self.memories.values())
+
+    async def get_memories_by_type(self, memory_type: str) -> List[Memory]:
+        await self.ensure_initialized()
+        return [
+            memory for memory in self.memories.values()
+            if memory.type == memory_type
+        ]
+    
+    async def get_memories_by_associated_agent(self, agent_id: str) -> List[Memory]:
+        await self.ensure_initialized()
+        return [
+            memory for memory in self.memories.values()
+            if agent_id in (memory.associated_agents or [])
+        ]
+
+    async def update_memory_immediately(self, memory: Memory) -> None:
+        if memory.id in self.memories:
+            self.memories[memory.id] = memory
+            self._update_cache(memory.id, memory)
+            if self.storage:
+                await self.storage.save_memory_immediately(memory)

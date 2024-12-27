@@ -24,7 +24,7 @@ def save_image(url, filename):
     with open(filename, 'wb') as f:
         f.write(response.content)
 
-def save_data(data_dir, name, data_type, data):
+def save_data(data_dir, name, data_type, data, memory_manager=None):
     os.makedirs(data_dir, exist_ok=True)
     with open(f'{data_dir}/{name}.jsonl', 'a') as f:
         json.dump({
@@ -33,6 +33,55 @@ def save_data(data_dir, name, data_type, data):
             'timestamp': datetime.now().isoformat()
         }, f)
         f.write('\n')
+    
+async def save_to_memory(data, memory_manager):
+    if not memory_manager:
+        return
+    
+    msg_type = data.get('type')
+    if msg_type == 'actionResult':
+        action_data = data.get('data', {})
+        action_result = f"{action_data.get('payload', {})}"
+        action_id = action_data.get('actionID')
+        
+        all_memories = await memory_manager.memory_stream.get_all_memories()
+        for memory in all_memories:
+            metadata = memory.metadata or {}
+            if memory.type == 'actionResult' and metadata.get('action_id') == action_id:
+                try:
+                    
+                    content_json = json.loads(metadata.get('original_content').rstrip('.'))
+                    content_json['actionResult'] = action_result
+                    metadata['original_content']= json.dumps(content_json)
+                    await memory_manager.memory_stream.update_memory(memory)
+                except json.JSONDecodeError:
+                    print(f"Error: Could not parse original_content as JSON: {memory.original_content}")
+                break
+    elif msg_type == 'chat':
+        chat_data = data.get('data', {})
+        content = f"{chat_data.get('message')}"
+        metadata = {
+            'sender_id': str(chat_data.get('senderPlayerID')),
+        }
+        await memory_manager.add_memory(
+            content=content,
+            memory_type='chat',
+            metadata=metadata,
+            associated_agents=[chat_data.get('senderPlayerID')]
+        )
+    elif msg_type == 'system':
+        system_data = data.get('data', {})
+        content = f"{system_data.get('message')}"
+        channel_id = system_data.get('channelID')
+        metadata = {
+            'channel_id': channel_id,
+        }
+        await memory_manager.add_memory(
+            content=content,
+            memory_type='system',
+            metadata=metadata,
+            associated_agents=[channel_id] if channel_id else None
+        )
 
 def load_data(data_dir, name, data_type=None, since=None, max_responses=None):
     with open(f'{data_dir}/{name}.jsonl', 'r') as f:

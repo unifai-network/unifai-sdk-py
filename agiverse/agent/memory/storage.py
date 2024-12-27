@@ -118,3 +118,13 @@ class LocalStorage:
             if filename.endswith(".json"):
                 os.remove(os.path.join(self.persist_directory, filename))
         self._memory_cache.clear()
+
+    async def save_memory_immediately(self, memory: Memory) -> None:
+        memory_dict = await memory.to_dict()
+        serialized_dict = self._serialize_memory(memory_dict)
+        memory_path = self._get_memory_path(memory.id)
+        
+        async with aiofiles.open(memory_path, "w") as f:
+            await f.write(json.dumps(serialized_dict))
+        
+        self._memory_cache[memory.id] = memory

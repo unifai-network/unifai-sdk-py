@@ -13,9 +13,7 @@ class MemoryManager:
 
     async def add_memory(self, content: str, memory_type: str,
                         associated_agents: Optional[List[str]] = None,
-                        importance_prompt: Optional[str] = None,
-                        metadata: Optional[Dict] = None,
-                        model: Optional[str] = None) -> Memory:
+                        metadata: Optional[Dict] = None) -> Memory:
         embedding = np.array(await self.embedding_generator.get_embedding(content, self.agent.get_model('embedding')))
         memory = Memory(content=content, type=memory_type,
                        associated_agents=associated_agents,

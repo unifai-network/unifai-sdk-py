@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from .api import API
-from .data import save_data
+from .data import save_data, save_to_memory
 from .messaging import MessagingHandler
 from .model import ModelManager
 from .summary import Summarizer
@@ -209,8 +209,9 @@ class Agent:
             except Exception as e:
                 logger.error(f"Post story failed: {e}")
 
-    def _save_data(self, data_type, data):
+    async def _save_data(self, data_type, data):
         save_data(self.data_dir, self.name, data_type, data)
+        await save_to_memory(data, self.memory_manager)
 
     def run(self):
         """

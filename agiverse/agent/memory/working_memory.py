@@ -4,16 +4,17 @@ from datetime import datetime
 from .base import Memory
 from .reflection import MemoryReflection
 from .manager import MemoryManager
+import json
 
 if TYPE_CHECKING:
     from ..agent import Agent
-
 
 @dataclass
 class MemoryStep:
     thought: Optional[str] = None
     action: Optional[str] = None
     action_input: Optional[str] = None
+    action_result: Optional[str] = None  
     observation: Optional[str] = None
     timestamp: Optional[datetime] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -25,23 +26,29 @@ class MemoryStep:
             self.metadata = {}
 
     def to_string(self) -> str:
-        parts = []
-        if self.thought:
-            parts.append(f"Thought: {self.thought}")
-        if self.action:
-            parts.append(f"Action: {self.action}")
-        if self.action_input:
-            parts.append(f"Action Input: {self.action_input}")
-        if self.observation:
-            parts.append(f"Observation: {self.observation}")
-        return "\n".join(parts)
+        content_dict = {
+            "thought": self.thought if self.thought else "",
+            "action": self.action if self.action else "",
+            "actionInput": self.action_input if self.action_input else "",
+            "actionResult": self.action_result if self.action_result else "",
+            "observation": self.observation if self.observation else ""
+        }
+        return json.dumps(content_dict)
 
     async def to_memory(self) -> Memory:
+        metadata_copy = {}
+        if self.metadata is not None:
+            metadata_copy = self.metadata.copy()
+            metadata_copy.pop('type', None)
+            memory_type = self.metadata.get('type', '')
+        else:
+            memory_type = ''  # Default value when metadata is None
+            
         return Memory(
             content=self.to_string(),
-            type="working_memory",
+            type=memory_type,
             created_at=self.timestamp,
-            metadata=self.metadata,
+            metadata=metadata_copy,
         )
 
 
@@ -62,18 +69,23 @@ class WorkingMemory:
         return len(self.steps)
 
     async def _step_to_memory(self, step: MemoryStep) -> Memory:
-        memory = await step.to_memory()
-        if self.memory_reflection:
-            memory.content = self.memory_reflection._format_memory_content(
-                memory.content
-            )
-        return memory
+        metadata = {}
+        if hasattr(step, 'metadata') and isinstance(step.metadata, dict):
+            metadata = step.metadata
+        
+        return Memory(
+            content=step.to_string(),
+            type="working_memory",
+            metadata=metadata,
+            created_at=datetime.now()
+        )
 
     async def add_step(
         self,
         thought: Optional[str] = None,
         action: Optional[str] = None,
         action_input: Optional[str] = None,
+        action_result: Optional[str] = None,  
         observation: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> MemoryStep:
@@ -81,6 +93,7 @@ class WorkingMemory:
             thought=thought,
             action=action,
             action_input=action_input,
+            action_result=action_result, 
             observation=observation,
             metadata=metadata,
         )
@@ -106,10 +119,6 @@ class WorkingMemory:
         if len(self.steps) <= self.max_size or not self.memory_manager:
             return
 
-        # will enable long term memory in the future
-        self.steps.pop(0)
-        return
-
         memories_to_compress = []
         for step in self.steps[-self.max_size :]:
             memory = await self._step_to_memory(step)
@@ -124,12 +133,11 @@ class WorkingMemory:
                 {
                     "compressed": True,
                     "original_content": memory.content,
-                    "original_type": memory.type,
                 }
             )
             await self.memory_manager.add_memory(
                 content=compressed_content,
-                memory_type="compressed_memory",
+                memory_type=memory.type,
                 associated_agents=memory.associated_agents or [],
                 metadata=metadata,
             )
