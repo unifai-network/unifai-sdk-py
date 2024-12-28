@@ -154,12 +154,11 @@ class MessagingHandler:
         msg_type = message.get('type')
         data = message.get('data')
 
-        if msg_type != 'tickEnd':
+        if msg_type not in ['tickEnd', 'map', 'players']:
             logger.info(f"Received: {msg_type} {data}")
 
         if msg_type == 'map':
             self.map_data = data
-            self.use_model = True
         elif msg_type == 'players':
             self.players_data = data
         elif msg_type == 'assets':

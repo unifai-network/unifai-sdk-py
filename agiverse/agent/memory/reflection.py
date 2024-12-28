@@ -5,6 +5,7 @@ from .base import Memory
 import logging
 
 logger = logging.getLogger(__name__)
+
 class MemoryReflection:
     def __init__(self, agent):
         self.agent = agent

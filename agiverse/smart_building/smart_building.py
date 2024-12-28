@@ -113,21 +113,25 @@ class SmartBuilding:
 
                         num_params = len(inspect.signature(action_handler['func']).parameters)
 
-                        if num_params == 1:
-                            await action_handler['func'](ctx)
-                        elif num_params == 2:
-                            await action_handler['func'](ctx, payload)
-                        elif num_params == 3:
-                            await action_handler['func'](ctx, payload, payment)
-                        else:
-                            logger.warning(f"Handler for action '{action_name}' has an unexpected number of parameters")
+                        try:
+                            if num_params == 1:
+                                await action_handler['func'](ctx)
+                            elif num_params == 2:
+                                await action_handler['func'](ctx, payload)
+                            elif num_params == 3:
+                                await action_handler['func'](ctx, payload, payment)
+                            else:
+                                logger.error(f"Handler for action '{action_name}' has an unexpected number of parameters")
+                        except Exception as e:
+                            logger.error(f"An error occurred while handling action '{action_name}', please consider adding error handling and notify the caller: {e}")
+                            await ctx.send_result({"error": "An unexpected error occurred, please report to the smart tool developer"})
                     else:
                         logger.warning(f"No handler for action '{action_name}'")
             except ConnectionClosedError:
                 logger.warning("Connection closed, attempting to reconnect...")
                 break
             except Exception as e:
-                logger.error(f"An error occurred: {e}")
+                logger.warning(f"An error occurred: {e}")
                 break
 
     async def _connect(self):
