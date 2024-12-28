@@ -28,7 +28,6 @@ class Memory:
     content: str,
     type: str = "observation",
     associated_agents: Optional[List[str]] = None,
-    channel_id: Optional[str] = None,
     metadata: Optional[Dict] = None,
     embedding: Optional[np.ndarray] = None,
     importance_score: float = 0.0,

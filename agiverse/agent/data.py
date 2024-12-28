@@ -46,10 +46,12 @@ async def save_to_memory(data, memory_manager):
         
         all_memories = await memory_manager.memory_stream.get_all_memories()
         for memory in all_memories:
-            metadata = memory.metadata or {}
+            metadata = memory.metadata
+            if not memory.metadata:
+                memory.metadata = {}
+                metadata = memory.metadata
             if memory.type == 'actionResult' and metadata.get('action_id') == action_id:
-                try:
-                    
+                try:  
                     content_json = json.loads(metadata.get('original_content').rstrip('.'))
                     content_json['actionResult'] = action_result
                     metadata['original_content']= json.dumps(content_json)
@@ -80,7 +82,7 @@ async def save_to_memory(data, memory_manager):
             content=content,
             memory_type='system',
             metadata=metadata,
-            associated_agents=[channel_id] if channel_id else None
+            associated_agents=[]
         )
 
 def load_data(data_dir, name, data_type=None, since=None, max_responses=None):

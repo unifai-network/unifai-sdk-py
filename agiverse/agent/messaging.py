@@ -121,7 +121,7 @@ class MessagingHandler:
                         continue
 
                 try:
-                    response = await self._generate_model_response(message)
+                    response = await self._generate_model_response()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -257,7 +257,7 @@ class MessagingHandler:
 
         return msg_type == 'tickEnd'
 
-    async def get_working_and_long_term_memories(self, recent_steps_limit: int = 1) -> tuple[str, list[str]]:
+    async def get_working_and_long_term_memories(self, recent_steps_limit: int = 1) -> tuple[str, str]:
         recent_steps = self.agent.working_memory.get_recent_steps(recent_steps_limit)
         
         if recent_steps:
@@ -267,7 +267,7 @@ class MessagingHandler:
         all_memories = await self.agent.memory_manager.memory_stream.get_all_memories()
         long_term_memory = await self._filter_and_rank_memories(working_memory_content, all_memories)
         
-        return working_memory_content, [long_term_memory]
+        return working_memory_content, long_term_memory
 
     async def _get_chat_context(self, sender_id: str, limit: int = 5) -> List[Memory]:
         chat_memories = await self.agent.memory_manager.memory_stream.get_memories_by_type('chat')
@@ -298,37 +298,38 @@ class MessagingHandler:
         
         return mock_message or current_message
 
-    async def _process_chat_message(self, long_term_memory: List[str], current_message: Dict) -> List[str]:
+    async def _process_chat_message(self, long_term_memory: str, current_message: Dict) -> List[str]:
         sender_id = current_message.get('data', {}).get('senderID')
         if sender_id:
             chat_context = await self._get_chat_context(sender_id)
-            merged_memory = await self._merge_memories_to_string(long_term_memory[0], chat_context)
-            return [merged_memory]
+            merged_memory = await self._merge_memories_to_string(long_term_memory, chat_context)
+            return merged_memory
+
         return long_term_memory
 
-    async def _process_system_message(self, long_term_memory: List[str], current_message: Dict) -> List[str]:
+    async def _process_system_message(self, long_term_memory: str, current_message: Dict) -> List[str]:
         channel_id = current_message.get('data', {}).get('channelID')
         if channel_id:
             system_context = await self._get_system_context(channel_id)
-            merged_memory = await self._merge_memories_to_string(long_term_memory[0], system_context)
-            return [merged_memory]
+            merged_memory = await self._merge_memories_to_string(long_term_memory, system_context)
+            return merged_memory
         return long_term_memory
 
-    async def _generate_model_response(self, message: Optional[Dict] = None):
+    async def _generate_model_response(self):
         working_memory_content, long_term_memory = await self.get_working_and_long_term_memories(10)
-        if message:
-            msg_type = message.get('type')
-            if msg_type == 'chat':
-                long_term_memory = await self._process_chat_message(long_term_memory, message)
-            elif msg_type == 'system':
-                long_term_memory = await self._process_system_message(long_term_memory, message)
+        for msg in self.other_data:
+            if msg.get('type') == 'chat':
+                long_term_memory = await self._process_chat_message(long_term_memory, msg)
+            
+        for msg in self.system_messages:
+            if msg.get('type') == 'system':
+                long_term_memory = await self._process_system_message(long_term_memory, msg)
         
         character_info = self.agent.get_prompt('character.info')
         system_prompt = self.agent.get_prompt('agent.system').format(
             character_name=self.agent.name,
             character_info=character_info,
         )
-
         return await self.agent.get_model_response(
             'agent.agent',
             character_name=self.agent.name,
@@ -340,7 +341,7 @@ class MessagingHandler:
             state=format_json(self.state_data),
             available_actions=format_json(self.available_actions),
             working_memory=self.agent.working_memory.steps_to_string(),
-            long_term_memory=long_term_memory[0],
+            long_term_memory=long_term_memory,
             planning=self.agent.planning,
             system_messages=format_json(self.system_messages),
             messages=format_json(self.other_data),
@@ -464,5 +465,4 @@ class MessagingHandler:
                             reverse=True)[:top_k]
             top_memories = [all_memories[i] for i in top_indices]
 
-        return "\n".join(memory.content for memory in top_memories)
         return "\n".join(memory.content for memory in top_memories)
