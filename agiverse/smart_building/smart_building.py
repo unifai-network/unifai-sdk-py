@@ -108,11 +108,16 @@ class SmartBuilding:
                             action_id=msg["data"].get("actionID"),
                             action_name=action_name
                         )
-                        payload = msg["data"].get("payload")
+                        payload = msg["data"].get("payload", {})
                         payment = msg["data"].get("payment")
 
-                        num_params = len(inspect.signature(action_handler['func']).parameters)
+                        if isinstance(payload, str):
+                            try:
+                                payload = json.loads(payload)
+                            except Exception as e:
+                                pass
 
+                        num_params = len(inspect.signature(action_handler['func']).parameters)
                         try:
                             if num_params == 1:
                                 await action_handler['func'](ctx)
