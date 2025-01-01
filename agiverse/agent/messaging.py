@@ -289,16 +289,7 @@ class MessagingHandler:
         memory_contents = [memory.content for memory in new_memories]
         return existing_memory + "\n" + "\n".join(memory_contents) if existing_memory else "\n".join(memory_contents)
 
-    async def _get_current_message(self, mock_message: Optional[Dict] = None) -> Optional[Dict]:
-        try:
-            current_message = await self.message_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            logger.warning("No message in queue when processing message")
-            current_message = None
-        
-        return mock_message or current_message
-
-    async def _process_chat_message(self, long_term_memory: str, current_message: Dict) -> List[str]:
+    async def _process_chat_message(self, long_term_memory: str, current_message: Dict) -> str:
         sender_id = current_message.get('data', {}).get('senderID')
         if sender_id:
             chat_context = await self._get_chat_context(sender_id)
@@ -307,7 +298,7 @@ class MessagingHandler:
 
         return long_term_memory
 
-    async def _process_system_message(self, long_term_memory: str, current_message: Dict) -> List[str]:
+    async def _process_system_message(self, long_term_memory: str, current_message: Dict) -> str:
         channel_id = current_message.get('data', {}).get('channelID')
         if channel_id:
             system_context = await self._get_system_context(channel_id)
