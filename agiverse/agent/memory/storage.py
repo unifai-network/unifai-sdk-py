@@ -10,7 +10,7 @@ from .base import Memory
 
 
 class LocalStorage:
-    def __init__(self, persist_directory: str, max_batch_size: int = 100):
+    def __init__(self, persist_directory: str, max_batch_size: int = 100, max_open_files: int = 256):
         self.persist_directory = persist_directory
         self.max_batch_size = max_batch_size
         self._write_queue: asyncio.Queue[Memory] = asyncio.Queue()
@@ -19,6 +19,7 @@ class LocalStorage:
         self._write_batch : Deque[Memory] = deque()
         self._write_task: Optional[asyncio.Task] = None
         os.makedirs(persist_directory, exist_ok=True)
+        self._file_semaphore = asyncio.Semaphore(max_open_files)
 
     async def initialize(self):
         if self._write_task is None:
@@ -47,8 +48,9 @@ class LocalStorage:
             memory_dict = await memory.to_dict()
             serialized_dict = self._serialize_memory(memory_dict)
             path = self._get_memory_path(memory.id)
-            async with aiofiles.open(path, "w") as f:
-                await f.write(json.dumps(serialized_dict))
+            async with self._file_semaphore:
+                async with aiofiles.open(path, "w") as f:
+                    await f.write(json.dumps(serialized_dict))
             self._memory_cache[memory.id] = memory
 
     def _get_memory_path(self, memory_id: str) -> str:
@@ -86,9 +88,10 @@ class LocalStorage:
         if not os.path.exists(memory_path):
             return None
 
-        async with aiofiles.open(memory_path, "r") as f:
-            content = await f.read()
-            memory_dict = json.loads(content)
+        async with self._file_semaphore:
+            async with aiofiles.open(memory_path, "r") as f:
+                content = await f.read()
+                memory_dict = json.loads(content)
 
         deserialized_dict = self._deserialize_memory(memory_dict)
         memory = await Memory.from_dict(deserialized_dict)
@@ -124,7 +127,8 @@ class LocalStorage:
         serialized_dict = self._serialize_memory(memory_dict)
         memory_path = self._get_memory_path(memory.id)
         
-        async with aiofiles.open(memory_path, "w") as f:
-            await f.write(json.dumps(serialized_dict))
+        async with self._file_semaphore:
+            async with aiofiles.open(memory_path, "w") as f:
+                await f.write(json.dumps(serialized_dict))
         
         self._memory_cache[memory.id] = memory
