@@ -63,21 +63,34 @@ class MessagingHandler:
         receive_task = asyncio.create_task(self._receive_messages(websocket, stop_event))
         process_task = asyncio.create_task(self._process_messages(websocket, stop_event))
 
-        done, pending = await asyncio.wait(
-            [receive_task, process_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        try:
+            done, pending = await asyncio.wait(
+                [receive_task, process_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
 
-        for task in done:
-            if task.exception():
-                raise task.exception()
+            # Cancel pending tasks immediately
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                logger.info(f"Task {task} has been cancelled successfully.")
+            # Check for exceptions in completed tasks
+            for task in done:
+                if task.exception():
+                    raise task.exception()
+
+        finally:
+            # Ensure both tasks are cancelled in case of any exception
+            for task in [receive_task, process_task]:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
 
     async def _receive_messages(self, websocket, stop_event):
         try:
