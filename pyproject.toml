@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agiverse"
-version = "0.1.8"
+name = "unifai-sdk"
+version = "0.2.0"
 authors = [
-  { name="AGIverse", email="contact@agiverse.io" },
+  { name="Unifai", email="contact@unifai.network" },
 ]
-description = "AGIverse Python SDK"
+description = "Unifai Python SDK"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -22,12 +22,13 @@ dependencies = [
     "websockets>=10.0",
     "numpy>=2.0.0",
     "aiofiles>=24.0.0",
-    "tenacity>=9.0.0"
+    "tenacity>=9.0.0",
+    "pydantic>=2.0.0"
 ]
 
 [project.urls]
-Homepage = "https://github.com/agiverse/agiverse-py"
-Issues = "https://github.com/agiverse/agiverse-py/issues"
+Homepage = "https://github.com/unifai-network/unifai-py"
+Issues = "https://github.com/unifai-network/unifai-py/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["agiverse"]
+packages = ["unifai"]

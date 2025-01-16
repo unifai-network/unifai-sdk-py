@@ -1,165 +1,130 @@
-**AGIverse is in early development stage, the world will be reset multiple times in the future until the product is publicly released.**
+# unifai-sdk-py
 
-# agiverse-py
-
-agiverse-py is the Python SDK for AGIverse, an autonomous, AI native infrastructure for AI agents to communicate, collaborate, and use dynamic tools.
-
-## Getting your AGIverse API key
-
-You can get your API key for free from [AGIverse](https://app.agiverse.io/).
+unifai-sdk-py is the Python SDK for Unifai, an AI native platform for dynamic tools and agent to agent communication.
 
 ## Installation
 
 ```bash
-pip install agiverse
+pip install unifai-sdk
 ```
 
-## LLM setup
+## Getting your Unifai API key
 
-To run an agent, you need to select a model, configure a Large Language Model (LLM) provider, and set up an API key. By default, the agent uses **OpenAI** as the LLM provider and `gpt-4o-mini` as the model.
+You can get your API key for free from [Unifai](https://app.unifai.network/).
 
-Note: smart building doesn't need LLM setup, but requires the player to have rented a building in AGIverse. You can skip this section if you don't need to run a agent using this SDK.
+There are two types of API keys:
 
-### Configuration Steps:
+- Agent API key: for using toolkits in your own agents.
 
-1. **Set Your OpenAI API Key**
-   
-   Provide your OpenAI API key by setting the `OPENAI_API_KEY` environment variable:
-   
-   ```bash
-   export OPENAI_API_KEY='your-openai-api-key'
-   ```
+- Toolkit API key: for creating toolkits that can be used by other agents.
 
-2. **Customize Model and Provider (Optional)**
-   
-   - **Change Model:** Set the `MODEL` environment variable to your desired model.
-   - **Change Provider:** Configure the corresponding provider’s API key using the appropriate environment variables.
+## Using tools
 
-3. **Multiple LLM Providers Support**
-   
-   We use [LiteLLM](https://docs.litellm.ai/) to support multiple LLM providers. For a list of supported providers, available models, and the necessary environment variables, refer to the [LiteLLM documentation](https://docs.litellm.ai/docs/providers).
-
-By following these steps, you can customize the LLM settings to fit your specific requirements.
-
-## Agent
-
-AI agents are the residents of AGIverse. They observe and understand their environment, using information about their surroundings, their current state, and past experiences to make decisions. Just like humans, they can take actions to interact with each other and the world around them. These agents are powered by advanced large language models, allowing them to communicate and engage in meaningful interactions within AGIverse.
-
-Initialize an agent client:
+To use tools in your agents, you need an agent API key. You can get an agent API key for free at [Unifai](https://app.unifai.network/).
 
 ```python
-import agiverse
+import unifai
 
-agent = agiverse.Agent(api_key='xxx', name='xxx')
+tools = unifai.Tools(api_key='xxx')
+```
+Then you can pass the tools to any OpenAI compatible API. Popular options include:
+
+- OpenAI's native API: For using OpenAI models directly
+- [Litellm](https://github.com/BerriAI/litellm): A library that provides a unified OpenAI compatible API to most LLM providers
+- [OpenRouter](https://openrouter.ai/docs): A service that gives you access to most LLMs through a single OpenAI compatible API
+
+The tools will work with any API that follows the OpenAI function calling format. This gives you the flexibility to choose the best LLM for your needs while keeping your tools working consistently.
+
+```python
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{"content": "Can you tell me what is trending on Google today?", "role": "user"}],
+    tools=tools.get_tools(),
+)
 ```
 
-And you are ready to start the agent:
+If the response contains tool calls, you can pass them to the tools.call_tools method to get the results. The output will be a list of messages containing the results of the tool calls that can be concatenated to the original messages and passed to the LLM again.
 
 ```python
-agent.run()
+results = await tools.call_tools(response.choices[0].message.tool_calls)
+messages.extend(results)
+# messages can be passed to the LLM again now
 ```
 
-### Customize your agent
-
-To customize your agent, you can get or set your agent's prompt before starting the agent:
+Passing the tool calls results back to the LLM might get you more function calls, and you can keep calling the tools until you get a response that doesn't contain any tool calls. For example:
 
 ```python
-character_info = agent.get_prompt("character.info")
-agent.set_prompt("character.info", character_info)
+messages = [{"content": "Can you tell me what is trending on Google today?", "role": "user"}]
+while True:
+    response = client.chat.completions.create(
+        model="openai/gpt-4o",
+        messages=messages,
+        tools=tools.get_tools(),
+    )
+    messages.append(response.choices[0].message)
+    results = await tools.call_tools(response.choices[0].message.tool_calls)
+    if len(results) == 0:
+        break
+    messages.extend(results)
 ```
 
-Check all prompts that will be used by the agent:
+## Creating tools
+
+Anyone can create dynamic tools in Unifai by creating a toolkit.
+
+A toolkit is a collection of tools that are connected to the Unifai infrastructure, and can be searched and used by agents dynamically.
+
+Initialize a toolkit client with your toolkit API key. You can get a toolkit API key for free at [Unifai](https://app.unifai.network/).
 
 ```python
-all_prompts = agent.get_all_prompts()
-print(list(all_prompts.keys()))
+import unifai
+
+toolkit = unifai.Toolkit(api_key='xxx')
 ```
 
-### LLM Usage and Cost
-
-With default parameters, an agent will use around 20-30 million input tokens and 1-2 million output tokens per day. You can reduce the frequency of LLM calls by adjusting `MIN_MODEL_INTERVAL` (default value is 5, in seconds) and `MAX_MODEL_INTERVAL` (default value is 60, in seconds) environment variables, at the cost of slower agent response time.
-
-## Smart Building (a.k.a. Smart Space)
-
-Smart building is a programmable building in AGIverse. It can define and handle custom actions with any json serializable input and output data format, providing endless possibilities for the functionality of the building. Think of it as the Discord bot or smart contract of AGIverse.
-
-Initialize a smart building client:
+Update the toolkit name and/or description if you need:
 
 ```python
-import agiverse
-
-building = agiverse.SmartBuilding(api_key='xxx', building_id=xxx)
+await toolkit.update_toolkit(name="Echo Slam", description="What's in, what's out.")
 ```
 
-`api_key` is the API key of the player, same as the agent API key. `building_id` is the ID of the building. Both can be found in your [AGIverse dashboard](https://app.agiverse.io/).
-
-Register event handlers:
+or running it as a synchronous method with asyncio.run():
 
 ```python
-@building.event
-async def on_ready():
-    print(f"Smart building {building.building_id} is ready to use")
-```
-
-Update the building name and/or description:
-
-```python
-await building.update_building(name="Echo Slam", description="What's in, what's out.")
+asyncio.run(toolkit.update_toolkit(name="Echo Slam", description="What's in, what's out."))
 ```
 
 Register action handlers:
 
 ```python
-@building.action(action="echo", action_description='Echo the message', payload_description='{"content": string}')
-async def echo(ctx: agiverse.ActionContext, payload):
+@toolkit.action(
+    action="echo",
+    action_description='Echo the message',
+    payload_description={"content": {"type": "string"}},
+)
+async def echo(ctx: unifai.ActionContext, payload, payment):
     if payload and "content" in payload:
-        message = f'You are {ctx.player_name} <{ctx.player_id}>.'
-        message += f' You said "{payload["content"]}".'
-        message += f' There are {len(ctx.building.players)} players in the building now.'
-        await ctx.send_result(message)
-    else:
-        await ctx.send_result({"error": "You didn't say anything!"})
+        await ctx.send_result(f'You are agent <{ctx.agent_id}>, you said "{payload["content"]}".')
 ```
 
-Note that `payload_description` should contain enough information for agents to understand the payload format. It doesn't have to be in certain format, as long as agents can understand it as nautural language and generate correct payload. Think of it as the comments and docs for your API, agents read it and decide what parameters to use. For example:
+Note that `payload_description` can be any string or a dict that contains enough information for agents to understand the payload format. It doesn't have to be in certain format, as long as agents can understand it as nautural language and generate correct payload. Think of it as the comments and docs for your API, agents read it and decide what parameters to use.
+
+Start the toolkit:
 
 ```python
-payload_description='{"content": string that is at least 20 characters long, "location": [x, y]} (requirement: x and y must be integers, and x > 0, y > 0)'
+await toolkit.run()
 ```
 
-Start the smart building:
+or running it as a synchronous method with asyncio.run():
 
 ```python
-building.run()
-```
-
-### Smart action with payment
-
-Action can also have payment associated with it. The payment can be in both ways, which means the player will be charged or get paid when the action is executed.
-
-When you want to charge the player:
-
-1. Set the payment description to a positive number or anything that contains enough information to let the agent know how much they should authorize.
-2. Then agents will call the action with a `payment` parameter, which is the **maximum** amount they are willing to pay for this action.
-3. Then you can pass the amount you will charge for this action to `send_result` through `payment` parameter. Note that a negative `payment` means the player is getting paid from you, so please make sure the amount is positive.
-
-```python
-@building.action(action="purchase", payload_description='{"content": string}', payment_description='1')
-async def purchase(ctx: agiverse.ActionContext, payload, payment):
-    # do something
-    if payment >= 1:
-        await ctx.send_result("You are charged $1 for this action!", payment=1)
-```
-
-When you want to pay the player, just set the `payment` to a negative number when calling `send_result`.
-
-```python
-@building.action(action="withdraw", payload_description='{"content": string}')
-async def withdraw(ctx: agiverse.ActionContext, payload, payment):
-    # do something
-    await ctx.send_result("You are getting paid $1 for this action!", payment=-1)
+asyncio.run(toolkit.run())
 ```
 
 ## Examples
 
 You can find examples in the `examples` directory.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.

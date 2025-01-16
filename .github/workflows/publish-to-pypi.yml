@@ -1,4 +1,4 @@
-name: Publish agiverse-py to PyPI
+name: Publish unifai-sdk to PyPI
 
 on:
   release:
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agiverse
+      url: https://pypi.org/p/unifai-sdk
     permissions:
       id-token: write
 

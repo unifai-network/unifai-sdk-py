@@ -8,7 +8,7 @@ from .model import ModelManager
 from .summary import Summarizer
 from datetime import datetime
 from .utils import load_prompt, load_all_prompts
-from ..common.const import DEFAULT_WS_ENDPOINT, DEFAULT_API_ENDPOINT
+from ..common.const import FRONTEND_API_ENDPOINT, BACKEND_WS_ENDPOINT
 from .memory.manager import MemoryManager
 from .memory.importance import ImportanceCalculator
 from .memory.embedding import EmbeddingGenerator
@@ -53,8 +53,8 @@ class Agent:
         self.messaging_handler = MessagingHandler(self)
         self.summarizer = Summarizer(self)
         self.api = API(self.api_key)
-        self.set_ws_endpoint(DEFAULT_WS_ENDPOINT)
-        self.set_api_endpoint(DEFAULT_API_ENDPOINT)
+        self.set_api_endpoint(FRONTEND_API_ENDPOINT)
+        self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self._stop_event = asyncio.Event()
         self._tasks = []
 
