@@ -20,7 +20,7 @@ There are two types of API keys:
 
 ## Using tools
 
-To use tools in your agents, you need an agent API key. You can get an agent API key for free at [Unifai](https://app.unifai.network/).
+To use tools in your agents, you need an **agent** API key. You can get an agent API key for free at [Unifai](https://app.unifai.network/).
 
 ```python
 import unifai
@@ -37,7 +37,7 @@ The tools will work with any API that follows the OpenAI function calling format
 
 ```python
 response = client.chat.completions.create(
-    model="openai/gpt-4o",
+    model="gpt-4o",
     messages=[{"content": "Can you tell me what is trending on Google today?", "role": "user"}],
     tools=tools.get_tools(),
 )
@@ -57,7 +57,7 @@ Passing the tool calls results back to the LLM might get you more function calls
 messages = [{"content": "Can you tell me what is trending on Google today?", "role": "user"}]
 while True:
     response = client.chat.completions.create(
-        model="openai/gpt-4o",
+        model="gpt-4o",
         messages=messages,
         tools=tools.get_tools(),
     )
@@ -74,7 +74,7 @@ Anyone can create dynamic tools in Unifai by creating a toolkit.
 
 A toolkit is a collection of tools that are connected to the Unifai infrastructure, and can be searched and used by agents dynamically.
 
-Initialize a toolkit client with your toolkit API key. You can get a toolkit API key for free at [Unifai](https://app.unifai.network/).
+Initialize a toolkit client with your **toolkit** API key. You can get a toolkit API key for free at [Unifai](https://app.unifai.network/).
 
 ```python
 import unifai
