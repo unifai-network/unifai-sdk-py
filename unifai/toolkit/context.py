@@ -6,7 +6,22 @@ if TYPE_CHECKING:
 from websockets.asyncio.client import ClientConnection
 from .messages import *
 
+class ActionResult(BaseModel):
+    """
+    Represents the result of an action.
+
+    :param payload: The payload to send back as the result.
+    :param payment: The actual payment amount associated with the action. Positive values indicate charges to agents,
+                    while negative values indicate payments to agents. The value must not exceed the payment value
+                    passed to the action handler.
+    """
+    payload: Any
+    payment: float = 0
+
 class ActionContext:
+    """
+    Represents the context of an action.
+    """
     toolkit: "Toolkit"
     websocket: ClientConnection
     agent_id: int
@@ -20,14 +35,21 @@ class ActionContext:
         self.action_id = action_id
         self.action_name = action_name
 
-    async def send_result(self, payload: Any, payment: float = 0):
+    def Result(self, payload: Any, payment: float = 0) -> ActionResult:
         """
-        Sends the result of the action back to the server.
+        Creates an ActionResult instance.
 
         :param payload: The payload to send back as the result.
-        :param payment: The actual payment amount associated with the action. Positive values are charging agents,
-                       negative values are paying agents. The value must be no greater than payment value passed
-                       to the action handler.
+        :param payment: The actual payment amount associated with the action. Positive values indicate charges to agents,
+                       while negative values indicate payments to agents. The value must not exceed the payment value
+                       passed to the action handler.
+        :return: An instance of ActionResult.
+        """
+        return ActionResult(payload=payload, payment=payment)
+
+    async def send_result(self, result: ActionResult):
+        """
+        Sends the result of the action back to the server.
         """
         action_result_message = ToolkitToServerMessage(
             type=ToolkitToServerMessageType.ACTION_RESULT,
@@ -35,8 +57,8 @@ class ActionContext:
                 action=self.action_name,
                 actionID=self.action_id,
                 agentID=self.agent_id,
-                payload=payload,
-                payment=payment,
+                payload=result.payload,
+                payment=result.payment,
             )
         )
         await self.websocket.send(action_result_message.model_dump_json())

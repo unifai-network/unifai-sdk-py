@@ -131,7 +131,10 @@ class Tools:
 
     async def _sem_call_tool(self, name: str, arguments: dict | str, tool_call_id: str, semaphore: asyncio.Semaphore) -> Optional[OpenAIToolResult]:
         async with semaphore:
-            result = await self.call_tool(name, arguments)
+            try:
+                result = await self.call_tool(name, arguments)
+            except Exception as e:
+                result = {"error": str(e)}
             if result is None:
                 return None
             return OpenAIToolResult(

@@ -9,13 +9,13 @@ from websockets import connect, ConnectionClosedError
 from websockets.asyncio.client import ClientConnection
 from ..common.const import FRONTEND_API_ENDPOINT, BACKEND_WS_ENDPOINT
 from .api import ToolkitAPI
-from .context import ActionContext
+from .context import ActionContext, ActionResult
 from .messages import *
 
 logger = logging.getLogger(__name__)
 
 EventHandler = Callable[..., Any]
-ActionHandlerFunc = Callable[..., Any]
+ActionHandlerFunc = Callable[..., Optional[ActionResult]]
 
 class EventType(Enum):
     ON_READY = "on_ready"
@@ -111,17 +111,18 @@ class Toolkit:
 
             num_params = len(inspect.signature(action_handler.func).parameters)
             try:
-                if num_params == 1:
-                    await action_handler.func(ctx)
-                elif num_params == 2:
-                    await action_handler.func(ctx, payload)
-                elif num_params == 3:
-                    await action_handler.func(ctx, payload, payment)
+                args = [ctx, payload, payment][:num_params]
+                if asyncio.iscoroutinefunction(action_handler.func):
+                    result = await action_handler.func(*args)
                 else:
-                    logger.error(f"Handler for action '{action_name}' has an unexpected number of parameters")
+                    result = action_handler.func(*args)
+                if not result:
+                    result = ctx.Result(None)
+                    logger.warning(f"Action handler '{action_name}' returned None, sending empty result. It is recommended to return a result from the action handler.")
+                await ctx.send_result(result)
             except Exception as e:
                 logger.error(f"An error occurred while handling action '{action_name}', please consider adding error handling and notify the caller: {e}")
-                await ctx.send_result({"error": "An unexpected error occurred, please report to the smart tool developer"})
+                await ctx.send_result(ctx.Result({"error": "An unexpected error occurred, please report to the smart tool developer"}))
         else:
             logger.warning(f"No handler for action '{action_name}'")
 
