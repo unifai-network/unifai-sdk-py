@@ -1,5 +1,5 @@
 import httpx
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 class API:
     api_key: str

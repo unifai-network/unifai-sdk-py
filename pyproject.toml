@@ -25,10 +25,12 @@ dependencies = [
     "tenacity>=9.0.0",
     "pydantic>=2.0.0"
 ]
+license = "MIT"
+license-files = ["LICENSE"]
 
 [project.urls]
-Homepage = "https://github.com/unifai-network/unifai-py"
-Issues = "https://github.com/unifai-network/unifai-py/issues"
+Homepage = "https://github.com/unifai-network/unifai-sdk-py"
+Issues = "https://github.com/unifai-network/unifai-sdk-py/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unifai"]
