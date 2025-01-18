@@ -12,7 +12,7 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
 
 from .agent import Agent
-from .toolkit import ActionContext, Toolkit
+from .toolkit import ActionContext, ActionResult, Toolkit
 from .tools import Tools
 
-__all__ = ['Agent', 'ActionContext', 'Toolkit', 'Tools']
+__all__ = ['Agent', 'ActionContext', 'ActionResult', 'Toolkit', 'Tools']

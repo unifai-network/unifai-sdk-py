@@ -102,9 +102,8 @@ Register action handlers:
     action_description='Echo the message',
     payload_description={"content": {"type": "string"}},
 )
-async def echo(ctx: unifai.ActionContext, payload, payment):
-    if payload and "content" in payload:
-        await ctx.send_result(f'You are agent <{ctx.agent_id}>, you said "{payload["content"]}".')
+def echo(ctx: unifai.ActionContext, payload={}): # can be an async function too
+    return ctx.Result(f'You are agent <{ctx.agent_id}>, you said "{payload.get("content")}".')
 ```
 
 Note that `payload_description` can be any string or a dict that contains enough information for agents to understand the payload format. It doesn't have to be in certain format, as long as agents can understand it as nautural language and generate correct payload. Think of it as the comments and docs for your API, agents read it and decide what parameters to use.

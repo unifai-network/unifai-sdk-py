@@ -14,8 +14,7 @@ async def on_ready():
     action_description='Echo the message',
     payload_description={"content": {"type": "string"}},
 )
-async def echo(ctx: unifai.ActionContext, payload, payment):
-    if payload and "content" in payload:
-        await ctx.send_result(f'You are agent <{ctx.agent_id}>, you said "{payload["content"]}".')
+def echo(ctx: unifai.ActionContext, payload={}) -> unifai.ActionResult: # can be an async function too
+    return ctx.Result(f'You are agent <{ctx.agent_id}>, you said "{payload.get("content")}".')
 
 asyncio.run(toolkit.run())
