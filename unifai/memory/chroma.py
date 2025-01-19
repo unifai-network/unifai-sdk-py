@@ -27,8 +27,9 @@ def safe_cast(obj: Any, cls: type[T]) -> T:
 class ChromaMemoryManager(MemoryManager):
     def __init__(self, config: ChromaConfig):
         self.config = config
-        try:
-            if config.storage_type == StorageType.HTTP:
+        
+        if config.storage_type == StorageType.HTTP:
+            try:
                 self.client = chromadb.HttpClient(
                     host=config.host,
                     port=config.port,
@@ -36,7 +37,15 @@ class ChromaMemoryManager(MemoryManager):
                     headers=None,
                     settings=Settings(),
                 )
-            else:  # PERSISTENT
+            except Exception as e:
+                raise ConnectionError(
+                    host=self.config.host,
+                    port=self.config.port,
+                    details=str(e)
+                )
+            
+        elif config.storage_type == StorageType.PERSISTENT:
+            try:
                 self.client = chromadb.PersistentClient(
                     path=config.persist_directory,
                     settings=Settings(
@@ -44,25 +53,23 @@ class ChromaMemoryManager(MemoryManager):
                         is_persistent=True
                     )
                 )
-                
-            self.embedding_function = self._get_embedding_function()
-            self.collection = self._initialize_collection()
-        except Exception as e:
-            if config.storage_type == StorageType.HTTP:
-                raise ConnectionError(
-                    host=self.config.host,
-                    port=self.config.port,
-                    details=str(e)
-                )
-            else:
+            except Exception as e:
                 raise ConnectionError(
                     host=f"persistent:{self.config.persist_directory}",
                     port=0,
                     details=str(e)
                 )
+            
+        else:
+            raise ValueError(f"Invalid storage type: {config.storage_type}")
+        
+        try:
+            self.embedding_function = self._get_embedding_function()
+            self.collection = self._initialize_collection()
+        except Exception as e:
+            raise MemoryError(f"Failed to initialize memory manager: {str(e)}")
 
     def _get_embedding_function(self):
-        """Get embedding function based on config or use default"""
         try:
             from chromadb.utils import embedding_functions
             return embedding_functions.DefaultEmbeddingFunction()
@@ -85,8 +92,18 @@ class ChromaMemoryManager(MemoryManager):
                 details=str(e)
             )
 
+    def _convert_embedding_to_list(self, embedding: Any) -> List[float]:
+        if embedding is None:
+            return None
+        if hasattr(embedding, 'tolist'):
+            return embedding.tolist()
+        if isinstance(embedding, (list, np.ndarray)):
+            return list(embedding)
+        raise ValueError(f"Unsupported embedding type: {type(embedding)}")
+
     async def add_embedding_to_memory(self, memory: Memory) -> Memory:
         if memory.embedding:
+            memory.embedding = self._convert_embedding_to_list(memory.embedding)
             return memory
 
         if not memory.content.get("text"):
@@ -94,29 +111,22 @@ class ChromaMemoryManager(MemoryManager):
 
         try:
             embedding = self.embedding_function([memory.content["text"]])[0]
-            memory.embedding = embedding
-            
-            metadata = serialize_memory(memory)
-            await asyncio.to_thread(
-                self.collection.add,
-                ids=[str(memory.id)],
-                embeddings=[embedding],
-                metadatas=[metadata],
-                documents=[memory.content["text"]]
-            )
-            
+            memory.embedding = self._convert_embedding_to_list(embedding)
             return memory
         except Exception as e:
-            raise MemoryError(f"Failed to add embedding: {str(e)}")
+            raise MemoryError(f"Failed to generate embedding: {str(e)}")
 
     async def create_memory(self, memory: Memory) -> None:
         try:
+            if not memory.embedding:
+                memory = await self.add_embedding_to_memory(memory)
+            
             metadata = serialize_memory(memory)
-
+            
             await asyncio.to_thread(
                 self.collection.add,
                 ids=[str(memory.id)],
-                embeddings=[memory.embedding] if memory.embedding else None,
+                embeddings=[memory.embedding],
                 metadatas=[metadata],
                 documents=[memory.content["text"]]
             )
@@ -259,7 +269,6 @@ class ChromaMemoryManager(MemoryManager):
 
     async def remove_all_memories(self) -> None:
         try:
-            # First get all memory IDs
             results = await asyncio.to_thread(
                 self.collection.get,
                 include=["metadatas"]  
