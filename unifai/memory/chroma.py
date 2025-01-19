@@ -45,7 +45,6 @@ class ChromaMemoryManager(MemoryManager):
                     )
                 )
                 
-            # Add default embedding function if none provided
             self.embedding_function = self._get_embedding_function()
             self.collection = self._initialize_collection()
         except Exception as e:
@@ -94,11 +93,9 @@ class ChromaMemoryManager(MemoryManager):
             raise EmptyContentError()
 
         try:
-            # Generate embedding using the embedding function
             embedding = self.embedding_function([memory.content["text"]])[0]
             memory.embedding = embedding
             
-            # Store the memory with its embedding
             metadata = serialize_memory(memory)
             await asyncio.to_thread(
                 self.collection.add,
@@ -231,12 +228,10 @@ class ChromaMemoryManager(MemoryManager):
         try:
             metadata = serialize_memory(memory)
             
-            # Check if embedding exists using isinstance instead of truthiness
             if not isinstance(memory.embedding, (list, np.ndarray)) or len(memory.embedding) == 0:
                 embedding = self.embedding_function([memory.content["text"]])[0]
                 memory.embedding = embedding.tolist() if hasattr(embedding, 'tolist') else list(embedding)
             
-            # Ensure embedding is a list
             current_embedding = memory.embedding
             if hasattr(current_embedding, 'tolist'):
                 current_embedding = current_embedding.tolist()
@@ -267,11 +262,10 @@ class ChromaMemoryManager(MemoryManager):
             # First get all memory IDs
             results = await asyncio.to_thread(
                 self.collection.get,
-                include=["metadatas"]  # We only need metadata to get the IDs
+                include=["metadatas"]  
             )
             
             if results["ids"]:
-                # Then delete all memories by their IDs
                 await asyncio.to_thread(
                     self.collection.delete,
                     ids=results["ids"]

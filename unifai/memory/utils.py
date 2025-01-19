@@ -26,13 +26,11 @@ def deserialize_memory(
     embedding: Optional[List[float]] = None,
     similarity: Optional[float] = None
 ) -> Memory:
-    # Handle role with backward compatibility
     try:
         role = MemoryRole(metadata.get("role", MemoryRole.USER.value))
     except (ValueError, KeyError):
         role = MemoryRole.USER
         
-    # Handle tools with backward compatibility
     tools = None
     tools_str = metadata.get("tools", "[]")
     if tools_str:
