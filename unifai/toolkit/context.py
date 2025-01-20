@@ -3,8 +3,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .toolkit import Toolkit
 
-from websockets.asyncio.client import ClientConnection
-from .messages import *
+from typing import Any
+from pydantic import BaseModel
+from .messages import ToolkitToServerMessage, ToolkitToServerMessageType, ActionResultMessageData
 
 class ActionResult(BaseModel):
     """
@@ -23,14 +24,12 @@ class ActionContext:
     Represents the context of an action.
     """
     toolkit: "Toolkit"
-    websocket: ClientConnection
     agent_id: int
     action_id: int
     action_name: str
 
-    def __init__(self, toolkit: "Toolkit", websocket: ClientConnection, agent_id: int, action_id: int, action_name: str):
+    def __init__(self, toolkit: "Toolkit", agent_id: int, action_id: int, action_name: str):
         self.toolkit = toolkit
-        self.websocket = websocket
         self.agent_id = agent_id
         self.action_id = action_id
         self.action_name = action_name
@@ -61,4 +60,4 @@ class ActionContext:
                 payment=result.payment,
             )
         )
-        await self.websocket.send(action_result_message.model_dump_json())
+        await self.toolkit._ws.send(action_result_message.model_dump_json())

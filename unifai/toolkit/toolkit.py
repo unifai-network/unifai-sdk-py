@@ -10,7 +10,7 @@ from websockets.asyncio.client import ClientConnection
 from ..common.const import FRONTEND_API_ENDPOINT, BACKEND_WS_ENDPOINT
 from .api import ToolkitAPI
 from .context import ActionContext, ActionResult
-from .messages import *
+from .messages import ActionDescription, ServerToToolkitMessage, ServerToToolkitMessageType, ActionMessageData, ToolkitToServerMessage, ToolkitToServerMessageType, RegisterActionsMessageData
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,6 @@ class Toolkit:
         if action_handler:
             ctx = ActionContext(
                 toolkit=self,
-                websocket=self._ws,
                 agent_id=action_data.agentID,
                 action_id=action_data.actionID,
                 action_name=action_name
