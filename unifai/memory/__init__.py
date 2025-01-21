@@ -10,6 +10,7 @@ from .exceptions import (
 from .protocols import MemoryManager
 from .chroma import ChromaMemoryManager
 from .utils import serialize_memory, deserialize_memory
+from .plugin import MemoryRankPlugin
 
 __all__ = [
     'Memory',
@@ -25,5 +26,6 @@ __all__ = [
     'ChromaMemoryManager',
     'serialize_memory',
     'deserialize_memory',
-    'ToolInfo'
+    'ToolInfo',
+    'MemoryRankPlugin'
 ]

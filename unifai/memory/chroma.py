@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from .base import Memory, ChromaConfig, StorageType
 from .exceptions import EmptyContentError, CollectionError, ConnectionError, MemoryError
 from .protocols import MemoryManager
+from .plugin import MemoryRankPlugin, PluginContext, MemoryContext
 from .utils import serialize_memory, deserialize_memory
 
 # Type definitions
@@ -68,6 +69,8 @@ class ChromaMemoryManager(MemoryManager):
             self.collection = self._initialize_collection()
         except Exception as e:
             raise MemoryError(f"Failed to initialize memory manager: {str(e)}")
+        
+        self.plugins: List[MemoryRankPlugin] = []
 
     def _get_embedding_function(self):
         try:
@@ -120,9 +123,7 @@ class ChromaMemoryManager(MemoryManager):
         try:
             if not memory.embedding:
                 memory = await self.add_embedding_to_memory(memory)
-            
             metadata = serialize_memory(memory)
-            
             await asyncio.to_thread(
                 self.collection.add,
                 ids=[str(memory.id)],
@@ -166,45 +167,77 @@ class ChromaMemoryManager(MemoryManager):
         except Exception as e:
             raise MemoryError(f"Failed to search memories: {str(e)}")
 
-    async def get_memories(
+    async def _get_base_memories(
         self,
-        count: Optional[int] = None,
-        unique: bool = False,
-        start: Optional[int] = None,
-        end: Optional[int] = None
+        content: str,
+        count: int,
+        threshold: float = 0.0
     ) -> List[Memory]:
+        """Get base memories using content similarity"""
         try:
-            where = {"unique": True} if unique else None
+            embedding = self.embedding_function([content])[0]
+            if hasattr(embedding, 'tolist'):
+                embedding = embedding.tolist()
             
             results = await asyncio.to_thread(
-                self.collection.get,
-                where=where,
-                limit=count,
-                offset=start,
-                include=["metadatas", "embeddings"]
+                self.collection.query,
+                query_embeddings=[embedding],
+                n_results=count,
+                where=None,
+                include=["metadatas", "embeddings", "distances"]
             )
             
-            if not results["ids"]:
+            if not results["ids"][0]:
                 return []
             
             memories = []
-            for idx, memory_id in enumerate(results["ids"]):
-                embedding = None
-                if "embeddings" in results and isinstance(results["embeddings"], np.ndarray):
-                    embedding = results["embeddings"][idx].tolist()
-                elif "embeddings" in results and isinstance(results["embeddings"], list):
-                    embedding = results["embeddings"][idx]
-                    
+            for idx, memory_id in enumerate(results["ids"][0]):
+                current_embedding = results["embeddings"][0][idx] if results.get("embeddings") else None
+                if current_embedding is not None and hasattr(current_embedding, 'tolist'):
+                    current_embedding = current_embedding.tolist()
+                
                 memory = deserialize_memory(
                     memory_id=memory_id,
-                    metadata=results["metadatas"][idx],
-                    embedding=embedding
+                    metadata=results["metadatas"][0][idx],
+                    embedding=current_embedding,
+                    similarity=1 - results["distances"][0][idx]
                 )
-                memories.append(memory)
+                if memory.similarity >= threshold:
+                    memories.append(memory)
                 
             return memories
+            
         except Exception as e:
-            raise MemoryError(f"Failed to get memories: {str(e)}")
+            raise MemoryError(f"Failed to get base memories: {str(e)}")
+
+    async def get_memories(
+    self,
+    content: str,
+    count: int = 5,
+    threshold: float = 0.0,
+    **kwargs
+    ) -> List[Memory]:
+        base_memories = await self._get_base_memories(content, count * 2, threshold)
+        
+        if not self.plugins:
+            return base_memories[:count]
+            
+        context = MemoryContext(
+            content=content,
+            count=count,
+            threshold=threshold,
+            _extra_args=kwargs
+        )
+        
+        memories = base_memories
+        for plugin in self.plugins:
+            try:
+                result = await plugin.rerank(memories, context)
+                memories = result.memories
+            except Exception as e:
+                print(f"Plugin {plugin.name} failed: {str(e)}")
+                continue
+        return memories[:count]
 
     async def get_memory_by_id(self, memory_id: UUID) -> Optional[Memory]:
         try:
@@ -281,3 +314,17 @@ class ChromaMemoryManager(MemoryManager):
                 )
         except Exception as e:
             raise MemoryError(f"Failed to remove all memories: {str(e)}")
+
+    def add_plugin(self, plugin: MemoryRankPlugin) -> None:
+        if any(p.name == plugin.name for p in self.plugins):
+            raise ValueError(f"Plugin with name {plugin.name} already exists")
+        self.plugins.append(plugin)
+        
+    def remove_plugin(self, plugin_name: str) -> None:
+        self.plugins = [p for p in self.plugins if p.name != plugin_name]
+        
+    def get_plugin(self, plugin_name: str) -> Optional[MemoryRankPlugin]:
+        return next((p for p in self.plugins if p.name == plugin_name), None)
+        
+    def list_plugins(self) -> List[str]:
+        return [p.name for p in self.plugins]
