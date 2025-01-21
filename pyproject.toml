@@ -34,7 +34,7 @@ Homepage = "https://github.com/unifai-network/unifai-sdk-py"
 Issues = "https://github.com/unifai-network/unifai-sdk-py/issues"
 
 [project.scripts]
-unifai-tools-mcp = "unifai.tools.mcp"
+unifai-tools-mcp = "unifai.tools.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unifai"]
