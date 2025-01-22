@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unifai-sdk"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
   { name="Unifai", email="contact@unifai.network" },
 ]
 description = "Unifai Python SDK"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -25,11 +25,17 @@ dependencies = [
     "tenacity>=9.0.0",
     "pydantic>=2.0.0",
     "chromadb>=0.4.0",
+    "mcp>=1.2.0"
 ]
+license = "MIT"
+license-files = ["LICENSE"]
 
 [project.urls]
-Homepage = "https://github.com/unifai-network/unifai-py"
-Issues = "https://github.com/unifai-network/unifai-py/issues"
+Homepage = "https://github.com/unifai-network/unifai-sdk-py"
+Issues = "https://github.com/unifai-network/unifai-sdk-py/issues"
+
+[project.scripts]
+unifai-tools-mcp = "unifai.tools.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unifai"]

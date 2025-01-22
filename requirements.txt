@@ -43,7 +43,7 @@ nh3==0.2.18
 numpy==2.1.3
 openai==1.56.2
 packaging==24.2
-pkginfo==1.10.0
+pkginfo==1.12.0
 propcache==0.2.0
 pydantic==2.10.1
 pydantic_core==2.27.1
@@ -67,7 +67,7 @@ tenacity==9.0.0
 tiktoken==0.8.0
 tokenizers==0.20.3
 tqdm==4.67.0
-twine==5.1.1
+twine==6.0.1
 types-PyYAML==6.0.12.20240917
 types-requests==2.32.0.20241016
 typing_extensions==4.12.2
