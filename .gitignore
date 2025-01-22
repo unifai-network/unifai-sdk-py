@@ -19,6 +19,8 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+*.bin
+*.sqlite3
 
 # Virtual environments
 venv/

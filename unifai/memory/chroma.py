@@ -1,0 +1,330 @@
+import asyncio
+from typing import List, Optional, Dict, Any, Union, Sequence, cast, TypeVar, Mapping
+from uuid import UUID
+import chromadb
+from chromadb.config import Settings
+from chromadb.api import Collection
+from chromadb.types import Where, WhereDocument
+import numpy as np
+from numpy.typing import NDArray
+
+from .base import Memory, ChromaConfig, StorageType
+from .exceptions import EmptyContentError, CollectionError, ConnectionError, MemoryError
+from .protocols import MemoryManager
+from .plugin import MemoryRankPlugin, PluginContext, MemoryContext
+from .utils import serialize_memory, deserialize_memory
+
+# Type definitions
+T = TypeVar('T')
+EmbeddingType = Union[NDArray[np.float32], List[float], Sequence[float]]
+WhereType = Dict[str, Any]
+MetadataType = Dict[str, Union[str, int, float, bool]]
+ChromaGetResult = Dict[str, Any]
+ChromaQueryResult = Dict[str, Any]
+
+def safe_cast(obj: Any, cls: type[T]) -> T:
+    return cast(cls, obj)
+
+class ChromaMemoryManager(MemoryManager):
+    def __init__(self, config: ChromaConfig):
+        self.config = config
+        
+        if config.storage_type == StorageType.HTTP:
+            try:
+                self.client = chromadb.HttpClient(
+                    host=config.host,
+                    port=config.port,
+                    ssl=False,
+                    headers=None,
+                    settings=Settings(),
+                )
+            except Exception as e:
+                raise ConnectionError(
+                    host=self.config.host,
+                    port=self.config.port,
+                    details=str(e)
+                )
+            
+        elif config.storage_type == StorageType.PERSISTENT:
+            try:
+                self.client = chromadb.PersistentClient(
+                    path=config.persist_directory,
+                    settings=Settings(
+                        allow_reset=True,
+                        is_persistent=True
+                    )
+                )
+            except Exception as e:
+                raise ConnectionError(
+                    host=f"persistent:{self.config.persist_directory}",
+                    port=0,
+                    details=str(e)
+                )
+            
+        else:
+            raise ValueError(f"Invalid storage type: {config.storage_type}")
+        
+        try:
+            self.embedding_function = self._get_embedding_function()
+            self.collection = self._initialize_collection()
+        except Exception as e:
+            raise MemoryError(f"Failed to initialize memory manager: {str(e)}")
+        
+        self.plugins: List[MemoryRankPlugin] = []
+
+    def _get_embedding_function(self):
+        try:
+            from chromadb.utils import embedding_functions
+            return embedding_functions.DefaultEmbeddingFunction()
+        except Exception as e:
+            raise MemoryError(f"Failed to initialize embedding function: {str(e)}")
+
+    def _initialize_collection(self) -> Collection:
+        try:
+            return self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                metadata={
+                    "dimension": self.config.dimensions,
+                    "distance_metric": self.config.distance_metric
+                },
+                embedding_function=self.embedding_function
+            )
+        except Exception as e:
+            raise CollectionError(
+                operation="initialize_collection",
+                details=str(e)
+            )
+
+    def _convert_embedding_to_list(self, embedding: Any) -> List[float]:
+        if embedding is None:
+            return None
+        if hasattr(embedding, 'tolist'):
+            return embedding.tolist()
+        if isinstance(embedding, (list, np.ndarray)):
+            return list(embedding)
+        raise ValueError(f"Unsupported embedding type: {type(embedding)}")
+
+    async def add_embedding_to_memory(self, memory: Memory) -> Memory:
+        if memory.embedding:
+            memory.embedding = self._convert_embedding_to_list(memory.embedding)
+            return memory
+
+        if not memory.content.get("text"):
+            raise EmptyContentError()
+
+        try:
+            embedding = self.embedding_function([memory.content["text"]])[0]
+            memory.embedding = self._convert_embedding_to_list(embedding)
+            return memory
+        except Exception as e:
+            raise MemoryError(f"Failed to generate embedding: {str(e)}")
+
+    async def create_memory(self, memory: Memory) -> None:
+        try:
+            if not memory.embedding:
+                memory = await self.add_embedding_to_memory(memory)
+            metadata = serialize_memory(memory)
+            await asyncio.to_thread(
+                self.collection.add,
+                ids=[str(memory.id)],
+                embeddings=[memory.embedding],
+                metadatas=[metadata],
+                documents=[memory.content["text"]]
+            )
+        except Exception as e:
+            raise MemoryError(f"Failed to create memory: {str(e)}")
+
+    async def search_memories_by_embedding(
+        self,
+        embedding: List[float],
+        match_threshold: float = 0.8,
+        count: int = 10,
+        unique: bool = False
+    ) -> List[Memory]:
+        try:
+            where = {"unique": True} if unique else None
+
+            results = await asyncio.to_thread(
+                self.collection.query,
+                query_embeddings=[embedding],
+                n_results=count,
+                where=where,
+                include=["metadatas", "embeddings", "distances"]
+            )
+
+            if not results["ids"][0]:
+                return []
+
+            return [
+                deserialize_memory(
+                    memory_id=results["ids"][0][idx],
+                    metadata=metadata,
+                    embedding=results["embeddings"][0][idx] if results.get("embeddings") else None,
+                    similarity=1 - results["distances"][0][idx]
+                )
+                for idx, metadata in enumerate(results["metadatas"][0])
+            ]
+        except Exception as e:
+            raise MemoryError(f"Failed to search memories: {str(e)}")
+
+    async def _get_base_memories(
+        self,
+        content: str,
+        count: int,
+        threshold: float = 0.0
+    ) -> List[Memory]:
+        """Get base memories using content similarity"""
+        try:
+            embedding = self.embedding_function([content])[0]
+            if hasattr(embedding, 'tolist'):
+                embedding = embedding.tolist()
+            
+            results = await asyncio.to_thread(
+                self.collection.query,
+                query_embeddings=[embedding],
+                n_results=count,
+                where=None,
+                include=["metadatas", "embeddings", "distances"]
+            )
+            
+            if not results["ids"][0]:
+                return []
+            
+            memories = []
+            for idx, memory_id in enumerate(results["ids"][0]):
+                current_embedding = results["embeddings"][0][idx] if results.get("embeddings") else None
+                if current_embedding is not None and hasattr(current_embedding, 'tolist'):
+                    current_embedding = current_embedding.tolist()
+                
+                memory = deserialize_memory(
+                    memory_id=memory_id,
+                    metadata=results["metadatas"][0][idx],
+                    embedding=current_embedding,
+                    similarity=1 - results["distances"][0][idx]
+                )
+                if memory.similarity >= threshold:
+                    memories.append(memory)
+                
+            return memories
+            
+        except Exception as e:
+            raise MemoryError(f"Failed to get base memories: {str(e)}")
+
+    async def get_memories(
+    self,
+    content: str,
+    count: int = 5,
+    threshold: float = 0.0,
+    **kwargs
+    ) -> List[Memory]:
+        base_memories = await self._get_base_memories(content, count * 2, threshold)
+        
+        if not self.plugins:
+            return base_memories[:count]
+            
+        context = MemoryContext(
+            content=content,
+            count=count,
+            threshold=threshold,
+            _extra_args=kwargs
+        )
+        
+        memories = base_memories
+        for plugin in self.plugins:
+            try:
+                result = await plugin.rerank(memories, context)
+                memories = result.memories
+            except Exception as e:
+                print(f"Plugin {plugin.name} failed: {str(e)}")
+                continue
+        return memories[:count]
+
+    async def get_memory_by_id(self, memory_id: UUID) -> Optional[Memory]:
+        try:
+            results = await asyncio.to_thread(
+                self.collection.get,
+                ids=[str(memory_id)],
+                include=["metadatas", "embeddings"]
+            )
+            
+            if not results["ids"]:
+                return None
+            
+
+            embedding = None
+            if "embeddings" in results and isinstance(results["embeddings"], list) and results["embeddings"]:
+                embedding_data = results["embeddings"][0]
+                if hasattr(embedding_data, 'tolist'):
+                    embedding = embedding_data.tolist()
+                elif isinstance(embedding_data, (list, np.ndarray)):
+                    embedding = list(embedding_data)
+                
+            return deserialize_memory(
+                memory_id=results["ids"][0],
+                metadata=results["metadatas"][0],
+                embedding=embedding
+            )
+        except Exception as e:
+            raise MemoryError(f"Failed to get memory by ID: {str(e)}")
+
+    async def update_memory(self, memory: Memory) -> None:
+        try:
+            metadata = serialize_memory(memory)
+            
+            if not isinstance(memory.embedding, (list, np.ndarray)) or len(memory.embedding) == 0:
+                embedding = self.embedding_function([memory.content["text"]])[0]
+                memory.embedding = embedding.tolist() if hasattr(embedding, 'tolist') else list(embedding)
+            
+            current_embedding = memory.embedding
+            if hasattr(current_embedding, 'tolist'):
+                current_embedding = current_embedding.tolist()
+            elif not isinstance(current_embedding, list):
+                current_embedding = list(current_embedding)
+            
+            await asyncio.to_thread(
+                self.collection.update,
+                ids=[str(memory.id)],
+                embeddings=[current_embedding],
+                metadatas=[metadata],
+                documents=[memory.content["text"]]
+            )
+        except Exception as e:
+            raise MemoryError(f"Failed to update memory: {str(e)}")
+
+    async def remove_memory(self, memory_id: UUID) -> None:
+        try:
+            await asyncio.to_thread(
+                self.collection.delete,
+                ids=[str(memory_id)]
+            )
+        except Exception as e:
+            raise MemoryError(f"Failed to remove memory: {str(e)}")
+
+    async def remove_all_memories(self) -> None:
+        try:
+            results = await asyncio.to_thread(
+                self.collection.get,
+                include=["metadatas"]  
+            )
+            
+            if results["ids"]:
+                await asyncio.to_thread(
+                    self.collection.delete,
+                    ids=results["ids"]
+                )
+        except Exception as e:
+            raise MemoryError(f"Failed to remove all memories: {str(e)}")
+
+    def add_plugin(self, plugin: MemoryRankPlugin) -> None:
+        if any(p.name == plugin.name for p in self.plugins):
+            raise ValueError(f"Plugin with name {plugin.name} already exists")
+        self.plugins.append(plugin)
+        
+    def remove_plugin(self, plugin_name: str) -> None:
+        self.plugins = [p for p in self.plugins if p.name != plugin_name]
+        
+    def get_plugin(self, plugin_name: str) -> Optional[MemoryRankPlugin]:
+        return next((p for p in self.plugins if p.name == plugin_name), None)
+        
+    def list_plugins(self) -> List[str]:
+        return [p.name for p in self.plugins]
