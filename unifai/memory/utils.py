@@ -2,16 +2,11 @@ from typing import List, Any, Dict, Optional
 from datetime import datetime
 from uuid import UUID
 import json
-from .base import Memory, MemoryRole, ToolInfo
+from enum import Enum
+from .base import Memory, MemoryRole, ToolInfo, MemoryType
 from pydantic import TypeAdapter
 
 def serialize_memory(memory: Memory) -> Dict[str, Any]:
-    if memory.embedding is not None:
-        if hasattr(memory.embedding, 'tolist'):
-            memory.embedding = memory.embedding.tolist()
-        elif not isinstance(memory.embedding, list):
-            memory.embedding = list(memory.embedding)
-    
     memory_dict = memory.model_dump(
         mode="json",
         exclude={"embedding", "similarity"}
@@ -20,8 +15,11 @@ def serialize_memory(memory: Memory) -> Dict[str, Any]:
     memory_dict["content_text"] = memory_dict["content"]["text"]
     del memory_dict["content"]
     
-    if memory_dict.get("tools"):
-        memory_dict["tools"] = json.dumps(memory_dict["tools"])
+    for key, value in memory_dict.items():
+        if isinstance(value, (dict, list, tuple)):
+            memory_dict[key] = json.dumps(value)
+        elif isinstance(value, Enum):
+            memory_dict[key] = value.value
     
     return memory_dict
 
@@ -31,7 +29,15 @@ def deserialize_memory(
     embedding: Optional[List[float]] = None,
     similarity: Optional[float] = None
 ) -> Memory:
-    metadata = {
+
+    for key in ["metadata", "tools"]:
+        if isinstance(metadata.get(key), str):
+            try:
+                metadata[key] = json.loads(metadata[key])
+            except json.JSONDecodeError:
+                metadata[key] = {} if key == "metadata" else None
+
+    memory_data = {
         **metadata,
         "id": memory_id,
         "content": {"text": metadata.pop("content_text")},
@@ -39,7 +45,4 @@ def deserialize_memory(
         **({"similarity": similarity} if similarity is not None else {})
     }
     
-    if isinstance(metadata.get("tools"), str):
-        metadata["tools"] = json.loads(metadata["tools"])
-    
-    return TypeAdapter(Memory).validate_json(json.dumps(metadata))
+    return TypeAdapter(Memory).validate_python(memory_data)

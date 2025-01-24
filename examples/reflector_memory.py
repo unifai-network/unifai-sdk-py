@@ -10,13 +10,13 @@ from unifai.memory import (
     ChromaMemoryManager,
     StorageType,
     MemoryRole,
-    ToolInfo
+    ToolInfo,
+    MemoryType
 )
 from unifai.reflector import FactReflector, GoalReflector
 import os
 from dotenv import load_dotenv
-from unifai.memory.plugins.tool import ToolSimilarityPlugin
-from unifai.memory.plugins.time import TimeDecayPlugin
+from unifai.memory.tool_plugin import ToolSimilarityPlugin
 
 load_dotenv()
 
@@ -38,26 +38,14 @@ When you need to take actions or find information you don't know, try to use app
 Use your memory to maintain context and provide more consistent responses.
 """
 
-# 初始化插件
-tool_plugin = ToolSimilarityPlugin(weight=0.3)
-time_plugin = TimeDecayPlugin(weight=0.2)
-
-# 添加到内存管理器
+tool_plugin = ToolSimilarityPlugin(weight=0.5)
 memory_manager.add_plugin(tool_plugin)
-memory_manager.add_plugin(time_plugin)
 
-# 查看已注册的插件
 print("Active plugins:", memory_manager.list_plugins())
 
-# 动态调整插件权重
 tool_plugin = memory_manager.get_plugin("ToolSimilarityPlugin")
 if tool_plugin:
-    tool_plugin.weight = 0.4
-
-# 禁用插件
-time_plugin = memory_manager.get_plugin("TimeDecayPlugin")
-if time_plugin:
-    time_plugin.enabled = False
+    tool_plugin.weight = 0.5
 
 async def process_interaction(user_message: str, previous_memories: List[Memory] = None):
     messages = [{"content": system_prompt, "role": "system"}]
@@ -73,10 +61,9 @@ async def process_interaction(user_message: str, previous_memories: List[Memory]
     interaction_content = []
     tool_infos_collection = []
     
-    # Process the conversation
     while True:
         response = await litellm.acompletion(
-            model="openai/gpt-4-turbo",
+            model="openai/gpt-4o-mini",
             messages=messages,
             tools=tools.get_tools(),
         )
@@ -113,19 +100,23 @@ async def process_interaction(user_message: str, previous_memories: List[Memory]
 
     full_interaction = "\n".join(interaction_content)
 
-    # Use reflectors to analyze the interaction
     fact_result = await fact_reflector.reflect(full_interaction)
     goal_result = await goal_reflector.reflect(full_interaction)
-    breakpoint()
-    # Store extracted information in memory
     if fact_result.success and fact_result.data.get('claims'):
         fact_memory = Memory(
             id=uuid.uuid4(),
             user_id=uuid.uuid4(),
             agent_id=uuid.uuid4(),
-            content={"text": f"Facts extracted: {fact_result.data['claims']}"},
+            content={
+                "text": "Extracted facts from conversation"
+            },
+            memory_type=MemoryType.FACT,
+            metadata={
+                "claims": fact_result.data['claims'],
+                "source_interaction": full_interaction
+            },
             role=MemoryRole.SYSTEM,
-            tools=tool_infos_collection if tool_infos_collection else [],
+            tools=tool_infos_collection if tool_infos_collection else None,
             unique=True
         )
         await memory_manager.create_memory(fact_memory)
@@ -136,27 +127,35 @@ async def process_interaction(user_message: str, previous_memories: List[Memory]
             id=uuid.uuid4(),
             user_id=uuid.uuid4(),
             agent_id=uuid.uuid4(),
-            content={"text": f"Goals tracked: {goal_result.data['goals']}"},
+            content={
+                "text": "Goals and progress tracking"
+            },
+            memory_type=MemoryType.GOAL,
+            metadata={
+                "goals": goal_result.data['goals'],
+                "source_interaction": full_interaction
+            },
             role=MemoryRole.SYSTEM,
-            tools=tool_infos_collection if tool_infos_collection else [],
+            tools=tool_infos_collection if tool_infos_collection else None,
             unique=True
         )
         await memory_manager.create_memory(goal_memory)
         print(f"Stored goal memory with ID: {goal_memory.id}")
 
-    # Store the full interaction
     interaction_memory = Memory(
         id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         agent_id=uuid.uuid4(),
-        content={"text": full_interaction},
+        content={
+            "text": full_interaction
+        },
         role=MemoryRole.SYSTEM,
-        tools=tool_infos_collection if tool_infos_collection else [],
+        tools=tool_infos_collection if tool_infos_collection else None,
         unique=False
     )
     await memory_manager.create_memory(interaction_memory)
     print(f"Stored interaction memory with ID: {interaction_memory.id}")
-
+    
 async def test_reflector_memory():
     print("\nTesting reflector memory system...")
     
@@ -170,7 +169,10 @@ async def test_reflector_memory():
     
     await process_interaction(test_message)
     
-    recent_memories = await memory_manager.get_memories(count=5)
+    recent_memories = await memory_manager.get_memories(
+        content=test_message,
+        count=5
+    )
     print("\nRecent memories:")
     for memory in recent_memories:
         print(f"\nMemory ID: {memory.id}")

@@ -1,10 +1,27 @@
-from typing import Dict, Any
+from typing import Dict, Any, Callable, Awaitable, List
 from .base import BaseReflector
 from .types import ReflectionType, ReflectionResult
 import json
+import litellm
+
+ChatCompletionFn = Callable[[List[Dict[str, Any]], Any], Awaitable[Any]]
+async def default_chat_completion(
+    messages: List[Dict[str, Any]], 
+    tools: Any = None
+) -> Any:
+    response = await litellm.acompletion(
+        model="openai/gpt-4o-mini",
+        messages=messages,
+        tools=tools
+    )
+    return response
 
 class FactReflector(BaseReflector):
-    def __init__(self, llm_client: Any):
+    def __init__(
+        self, 
+        chat_completion_fn: Callable[[Dict[str, Any]], Awaitable[Any]],
+        model: str = "gpt-4o-mini",
+    ):
         super().__init__(
             name="FACT_REFLECTOR",
             description="Extracts factual information and claims from messages",
@@ -18,7 +35,7 @@ class FactReflector(BaseReflector):
             - Numerical data
 
             Content:
-            {{content}}
+            {content}
 
             Response format:
             ```json
@@ -27,31 +44,32 @@ class FactReflector(BaseReflector):
                     {
                         "claim": "string",
                         "type": "fact|status|opinion",
-                        "confidence": float,
-                        "already_known": boolean
+                        "confidence": float
                     }
                 ]
             }
             ```
             """
         )
-        self.llm_client = llm_client
+        self.chat_completion_fn = chat_completion_fn
+        self.model = model
 
     async def process_reflection(self, content: str) -> ReflectionResult[Dict[str, Any]]:
         if not content:
             return ReflectionResult(success=False, data=None, reason="Empty content")
 
-        prompt = self.prompt_template.replace("{{content}}", content)
+        prompt = self.prompt_template.format(content=content)
 
         try:
-            response = await self.llm_client.acompletion(
-                model="openai/gpt-4-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            response = await self.chat_completion_fn(
+                {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"}
+                }
             )
             
             llm_response = response.choices[0].message.content
-            # Parse JSON string to dict
             llm_data = json.loads(llm_response)
             
             return ReflectionResult(success=True, data={

@@ -1,10 +1,28 @@
-from typing import Dict, Any
+from typing import List, Dict, Any, Callable, Awaitable
 from .base import BaseReflector
 from .types import ReflectionType, ReflectionResult
 import json
+import litellm
+
+ChatCompletionFn = Callable[[List[Dict[str, Any]], Any], Awaitable[Any]]
+
+async def default_chat_completion(
+    messages: List[Dict[str, Any]], 
+    tools: Any = None
+) -> Any:
+    response = await litellm.acompletion(
+        model="openai/gpt-4o-mini",
+        messages=messages,
+        tools=tools
+    )
+    return response
 
 class GoalReflector(BaseReflector):
-    def __init__(self, llm_client: Any):
+    def __init__(
+        self, 
+        chat_completion_fn: ChatCompletionFn = default_chat_completion,
+        model: str = "gpt-4o-mini",
+    ):
         super().__init__(
             name="GOAL_REFLECTOR",
             description="Tracks progress and updates on stated goals",
@@ -18,7 +36,7 @@ class GoalReflector(BaseReflector):
             - Changes in priorities
 
             Content:
-            {{content}}
+            {content}
 
             Response format:
             ```json
@@ -35,28 +53,43 @@ class GoalReflector(BaseReflector):
             ```
             """
         )
-        self.llm_client = llm_client
+        self.chat_completion_fn = chat_completion_fn
+        self.model = model
 
     async def process_reflection(self, content: str) -> ReflectionResult[Dict[str, Any]]:
         if not content:
             return ReflectionResult(success=False, data=None, reason="Empty content")
 
-        prompt = self.prompt_template.replace("{{content}}", content)
+        messages = [
+            {
+                "role": "user", 
+                "content": self.prompt_template.format(content=content)
+            }
+        ]
 
         try:
-            response = await self.llm_client.acompletion(
-                model="openai/gpt-4-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
+            response = await self.chat_completion_fn(
+                messages,
+                tools=None  # No tools needed for reflection
             )
             
             llm_response = response.choices[0].message.content
-            # Parse JSON string to dict
             llm_data = json.loads(llm_response)
             
-            return ReflectionResult(success=True, data={
-                "type": ReflectionType.GOAL.value,
-                "goals": llm_data["goals"]
-            })
+            return ReflectionResult(
+                success=True,
+                data=llm_data
+            )
+            
+        except json.JSONDecodeError as e:
+            return ReflectionResult(
+                success=False,
+                data=None,
+                reason=f"Failed to parse JSON response: {str(e)}"
+            )
         except Exception as e:
-            return ReflectionResult(success=False, data=None, reason=str(e))
+            return ReflectionResult(
+                success=False,
+                data=None,
+                reason=f"Reflection failed: {str(e)}"
+            )

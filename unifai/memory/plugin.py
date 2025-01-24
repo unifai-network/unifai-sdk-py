@@ -101,7 +101,6 @@ class MemoryRankPlugin(Generic[PluginConfig], ABC):
             )
             
         scores = await self.calculate_scores(memories, context)
-        
         # Update memory similarities
         for memory in memories:
             memory_id = str(memory.id)

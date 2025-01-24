@@ -29,15 +29,6 @@ class MemoryManager(Protocol):
     async def create_memory(self, memory: Memory) -> None:
         raise NotImplementedError
 
-    async def search_memories_by_embedding(
-        self,
-        embedding: List[float],
-        match_threshold: float = 0.8,
-        count: int = 10,
-        unique: bool = False
-    ) -> List[Memory]:
-        raise NotImplementedError
-
     async def get_memories(
         self,
         content: str,
