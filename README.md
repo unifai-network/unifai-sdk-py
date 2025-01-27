@@ -68,6 +68,34 @@ while True:
     messages.extend(results)
 ```
 
+### Using tools in MCP clients
+
+We provide a MCP server to access tools in any [MCP clients](https://modelcontextprotocol.io/clients) such as [Claude Desktop](https://modelcontextprotocol.io/quickstart/user).
+
+The easiest way to run the server is using `uv`, see [Instaling uv](https://docs.astral.sh/uv/getting-started/installation/) if you haven't installed it yet.
+
+Then in your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "unifai-tools": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "unifai-sdk",
+        "unifai-tools-mcp"
+      ],
+      "env": {
+        "UNIFAI_AGENT_API_KEY": ""
+      }
+    }
+  }
+}
+```
+
+Now your Claude Desktop will be able to access all the tools in Unifai automatically.
+
 ## Creating tools
 
 Anyone can create dynamic tools in Unifai by creating a toolkit.
