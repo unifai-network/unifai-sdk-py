@@ -11,8 +11,7 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-from .agent import Agent
 from .toolkit import ActionContext, ActionResult, Toolkit
 from .tools import Tools
 
-__all__ = ['Agent', 'ActionContext', 'ActionResult', 'Toolkit', 'Tools']
+__all__ = ['ActionContext', 'ActionResult', 'Toolkit', 'Tools']

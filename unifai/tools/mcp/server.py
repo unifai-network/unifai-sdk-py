@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 import json
 import os
 import importlib.metadata
