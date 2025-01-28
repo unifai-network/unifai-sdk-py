@@ -1,4 +1,4 @@
-from .base import Memory, ChromaConfig, StorageType, MemoryRole
+from .base import Memory, ChromaConfig, StorageType, MemoryRole, MemoryType
 from .base import ChromaConfig, ToolInfo
 from .exceptions import (
     MemoryError,
@@ -17,6 +17,7 @@ __all__ = [
     'ChromaConfig',
     'StorageType',
     'MemoryRole',
+    'MemoryType',
     'MemoryError',
     'EmptyContentError',
     'EmbeddingDimensionError',

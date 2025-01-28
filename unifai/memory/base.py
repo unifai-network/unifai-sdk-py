@@ -13,11 +13,20 @@ class ToolInfo(BaseModel):
     name: str
     description: str
 
+class MemoryType(Enum):
+    INTERACTION = "interaction"
+    FACT = "fact"
+    GOAL = "goal"
+    EVALUATION = "evaluation"
+    CUSTOM = "custom"
+
 class Memory(BaseModel):
     id: UUID
     user_id: UUID
     agent_id: UUID
     content: Dict[str, Any]
+    memory_type: MemoryType = MemoryType.INTERACTION
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     role: MemoryRole = MemoryRole.USER
     tools: Optional[List[ToolInfo]] = None
     embedding: Optional[List[float]] = None

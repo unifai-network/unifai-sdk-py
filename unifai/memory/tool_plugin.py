@@ -7,9 +7,9 @@ class ToolSimilarityConfig:
     """Configuration for tool similarity plugin"""
     def __init__(
         self, 
-        tool_match_bonus: float = 0.2,
-        sequence_bonus: float = 0.3,
-        recency_weight: float = 0.1
+        tool_match_bonus: float = 0.5,
+        sequence_bonus: float = 0.6,
+        recency_weight: float = 0.2
     ):
         self.tool_match_bonus = tool_match_bonus
         self.sequence_bonus = sequence_bonus

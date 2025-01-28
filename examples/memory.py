@@ -2,24 +2,31 @@ import asyncio
 import uuid
 import litellm
 import unifai
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 from unifai.memory import (
     Memory, 
     ChromaConfig,
     ChromaMemoryManager,
-    EmptyContentError,
-    MemoryError,
     StorageType,
     MemoryRole,
     ToolInfo
 )
+from unifai.memory.tool_plugin import ToolSimilarityPlugin
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 tools = unifai.Tools(api_key=os.getenv("AGENT_API_KEY"))
+persistent_config = ChromaConfig(
+    storage_type=StorageType.PERSISTENT,
+    persist_directory="./chroma_db",
+    collection_name="assistant-memories"
+)
+memory_manager = ChromaMemoryManager(persistent_config)
+
+tool_plugin = ToolSimilarityPlugin(weight=0.5)
+memory_manager.add_plugin(tool_plugin)
 
 system_prompt = """
 You are a personal assistant with memory capabilities and access to various tools.
@@ -29,14 +36,6 @@ Use your memory to maintain context and provide more consistent responses.
 """
 
 async def test_memory_features():
-    persistent_config = ChromaConfig(
-        storage_type=StorageType.PERSISTENT,
-        persist_directory="./chroma_db",
-        collection_name="assistant-memories"
-    )
-    
-    memory_manager = ChromaMemoryManager(persistent_config)
-    
     await memory_manager.remove_all_memories()
     
     async def process_message(user_message: str, previous_memories: List[Memory] = None):
@@ -45,7 +44,7 @@ async def test_memory_features():
         if previous_memories:
             memory_context = "Previous relevant information:\n"
             for mem in previous_memories:
-                memory_context += f"- {mem.content['text']}\n"
+                memory_context += f"- {mem.text}\n"
             messages.append({"content": memory_context, "role": "system"})
         
         messages.append({"content": user_message, "role": "user"})
@@ -80,11 +79,6 @@ async def test_memory_features():
             ]
             tool_infos_collection.extend(tool_infos)
             
-            print("Calling tools:", [
-                f"{tool.name}({tool.description})"
-                for tool in tool_infos
-            ])
-            
             results = await tools.call_tools(assistant_message.tool_calls)
             
             if len(results) == 0:
@@ -94,32 +88,25 @@ async def test_memory_features():
                 interaction_content.append(f"Tool result: {result['content']}")
             
             messages.extend(results)
-        
-
+    
         memory = Memory(
             id=uuid.uuid4(),
             user_id=uuid.uuid4(),
             agent_id=uuid.uuid4(),
             content={"text": "\n".join(interaction_content)},
-            tools=tool_infos_collection,
+            tools=tool_infos_collection if tool_infos_collection else None,
             role=MemoryRole.SYSTEM,
             unique=True
         )
         await memory_manager.create_memory(memory)
-        print(f"Stored interaction memory with ID: {memory.id}")
 
-    print("\nTesting memory system with UnifAI tools...")
-    
     await process_message("What's trending on Google today?")
     
-
-    recent_memories = await memory_manager.get_memories(count=5)
+    recent_memories = await memory_manager.get_memories(
+        content="What's trending on Google today?",
+        count=5
+    )
     print(f"\nFound {len(recent_memories)} recent memories")
-    
-async def main():
-    print("Starting memory system test with UnifAI tools...")
-    await test_memory_features()
-    print("Memory system test completed successfully!")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(test_memory_features())

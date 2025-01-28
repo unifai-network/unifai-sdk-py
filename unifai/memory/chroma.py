@@ -8,13 +8,12 @@ from chromadb.types import Where, WhereDocument
 import numpy as np
 from numpy.typing import NDArray
 
-from .base import Memory, ChromaConfig, StorageType
+from .base import Memory, ChromaConfig, StorageType, MemoryType
 from .exceptions import EmptyContentError, CollectionError, ConnectionError, MemoryError
 from .protocols import MemoryManager
 from .plugin import MemoryRankPlugin, PluginContext, MemoryContext
 from .utils import serialize_memory, deserialize_memory
 
-# Type definitions
 T = TypeVar('T')
 EmbeddingType = Union[NDArray[np.float32], List[float], Sequence[float]]
 WhereType = Dict[str, Any]
@@ -134,39 +133,6 @@ class ChromaMemoryManager(MemoryManager):
         except Exception as e:
             raise MemoryError(f"Failed to create memory: {str(e)}")
 
-    async def search_memories_by_embedding(
-        self,
-        embedding: List[float],
-        match_threshold: float = 0.8,
-        count: int = 10,
-        unique: bool = False
-    ) -> List[Memory]:
-        try:
-            where = {"unique": True} if unique else None
-
-            results = await asyncio.to_thread(
-                self.collection.query,
-                query_embeddings=[embedding],
-                n_results=count,
-                where=where,
-                include=["metadatas", "embeddings", "distances"]
-            )
-
-            if not results["ids"][0]:
-                return []
-
-            return [
-                deserialize_memory(
-                    memory_id=results["ids"][0][idx],
-                    metadata=metadata,
-                    embedding=results["embeddings"][0][idx] if results.get("embeddings") else None,
-                    similarity=1 - results["distances"][0][idx]
-                )
-                for idx, metadata in enumerate(results["metadatas"][0])
-            ]
-        except Exception as e:
-            raise MemoryError(f"Failed to search memories: {str(e)}")
-
     async def _get_base_memories(
         self,
         content: str,
@@ -176,37 +142,12 @@ class ChromaMemoryManager(MemoryManager):
         """Get base memories using content similarity"""
         try:
             embedding = self.embedding_function([content])[0]
-            if hasattr(embedding, 'tolist'):
-                embedding = embedding.tolist()
-            
-            results = await asyncio.to_thread(
-                self.collection.query,
-                query_embeddings=[embedding],
-                n_results=count,
+            return await self._get_memories_with_filter(
                 where=None,
-                include=["metadatas", "embeddings", "distances"]
+                count=count,
+                threshold=threshold,
+                query_embedding=embedding
             )
-            
-            if not results["ids"][0]:
-                return []
-            
-            memories = []
-            for idx, memory_id in enumerate(results["ids"][0]):
-                current_embedding = results["embeddings"][0][idx] if results.get("embeddings") else None
-                if current_embedding is not None and hasattr(current_embedding, 'tolist'):
-                    current_embedding = current_embedding.tolist()
-                
-                memory = deserialize_memory(
-                    memory_id=memory_id,
-                    metadata=results["metadatas"][0][idx],
-                    embedding=current_embedding,
-                    similarity=1 - results["distances"][0][idx]
-                )
-                if memory.similarity >= threshold:
-                    memories.append(memory)
-                
-            return memories
-            
         except Exception as e:
             raise MemoryError(f"Failed to get base memories: {str(e)}")
 
@@ -221,7 +162,6 @@ class ChromaMemoryManager(MemoryManager):
         
         if not self.plugins:
             return base_memories[:count]
-            
         context = MemoryContext(
             content=content,
             count=count,
@@ -328,3 +268,105 @@ class ChromaMemoryManager(MemoryManager):
         
     def list_plugins(self) -> List[str]:
         return [p.name for p in self.plugins]
+
+    async def get_memories_by_type(
+        self,
+        memory_type: MemoryType,
+        count: int = 5,
+        threshold: float = 0.0,
+    ) -> List[Memory]:
+        try:
+            results = await asyncio.to_thread(
+                self.collection.get,
+                include=["metadatas", "embeddings"]
+            )
+            
+            if not results["ids"]:
+                return []
+            
+            memories = []
+            for idx, memory_id in enumerate(results["ids"]):
+                try:
+                    memory = deserialize_memory(
+                        memory_id=memory_id,
+                        metadata=results["metadatas"][idx],
+                        embedding=results["embeddings"][idx] if "embeddings" in results else None
+                    )
+                    
+                    if memory.memory_type == memory_type:
+                        memories.append(memory)
+                        
+                except Exception as e:
+                    print(f"Failed to deserialize memory {memory_id}: {str(e)}")
+                    continue
+                
+            return memories[:count]
+            
+        except Exception as e:
+            raise MemoryError(f"Failed to get memories by type: {str(e)}")
+
+    async def _get_memories_with_filter(
+        self,
+        where: Dict[str, Any],
+        count: int,
+        threshold: float = 0.0,
+        query_embedding: Optional[List[float]] = None
+    ) -> List[Memory]:
+        try:
+            if query_embedding is not None:
+                if isinstance(query_embedding, np.ndarray):
+                    query_embedding = query_embedding.tolist()
+                elif not isinstance(query_embedding, list):
+                    query_embedding = list(query_embedding)
+            results = await asyncio.to_thread(
+                self.collection.query,
+                query_embeddings=[query_embedding] if query_embedding else None,
+                n_results=count,
+                where=where,
+                include=["metadatas", "embeddings", "distances"]
+            )
+            
+            if not isinstance(results["ids"], list) or not results["ids"]:
+                return []
+            if not isinstance(results["ids"][0], list) or not results["ids"][0]:
+                return []
+            
+            memories = []
+            for idx, memory_id in enumerate(results["ids"][0]):
+                similarity = None
+                if (isinstance(results.get("distances"), list) and 
+                    results["distances"] and 
+                    isinstance(results["distances"][0], list) and 
+                    len(results["distances"][0]) > idx):
+                    try:
+                        similarity = float(results["distances"][0][idx])
+                    except (TypeError, ValueError):
+                        continue
+                
+                embedding = None
+                if (isinstance(results.get("embeddings"), list) and 
+                    results["embeddings"] and 
+                    isinstance(results["embeddings"][0], list) and 
+                    len(results["embeddings"][0]) > idx):
+                    embedding_data = results["embeddings"][0][idx]
+                    if isinstance(embedding_data, (list, np.ndarray)):
+                        embedding = list(embedding_data)
+                
+                try:
+                    memory = deserialize_memory(
+                        memory_id=memory_id,
+                        metadata=results["metadatas"][0][idx],
+                        embedding=embedding,
+                        similarity=similarity
+                    )
+                    
+                    if similarity is None or similarity >= threshold:
+                        memories.append(memory)
+                except Exception as e:
+                    print(f"Failed to deserialize memory {memory_id}: {str(e)}")
+                    continue
+            
+            return memories
+            
+        except Exception as e:
+            raise MemoryError(f"Failed to get memories with filter: {str(e)}")
