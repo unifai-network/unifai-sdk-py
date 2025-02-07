@@ -127,33 +127,26 @@ class Toolkit:
 
     async def _handle_messages(self):
         while True:
+            message = await self._ws.recv()
+
+            logger.debug(f"Received raw message: {message}")
+
             try:
-                message = await self._ws.recv()
+                msg = ServerToToolkitMessage.model_validate_json(message)
+            except json.JSONDecodeError:
+                logger.warning("Received a non-JSON message.")
+                continue
+            except ValidationError as e:
+                logger.warning(f"Message validation error: {e}")
+                continue
 
-                logger.debug(f"Received raw message: {message}")
-
+            if msg.type == ServerToToolkitMessageType.ACTION:
                 try:
-                    msg = ServerToToolkitMessage.model_validate_json(message)
-                except json.JSONDecodeError:
-                    logger.warning("Received a non-JSON message.")
-                    continue
+                    action_data = ActionMessageData(**msg.data)
                 except ValidationError as e:
-                    logger.warning(f"Message validation error: {e}")
+                    logger.warning(f"Action message validation error: {e}")
                     continue
-
-                if msg.type == ServerToToolkitMessageType.ACTION:
-                    try:
-                        action_data = ActionMessageData(**msg.data)
-                    except ValidationError as e:
-                        logger.warning(f"Action message validation error: {e}")
-                        continue
-                    await self._handle_action(action_data)
-            except ConnectionClosedError:
-                logger.warning("Connection closed, attempting to reconnect...")
-                break
-            except Exception as e:
-                logger.warning(f"An error occurred: {e}")
-                break
+                await self._handle_action(action_data)
 
     async def _connect(self):
         while self._reconnect:
@@ -183,8 +176,11 @@ class Toolkit:
                         await self._event_handlers[EventType.ON_READY]()
 
                     await self._handle_messages()
+            except ConnectionClosedError:
+                logger.warning("Connection closed")
             except Exception as e:
-                logger.error(f"An error occurred: {e}")
+                logger.warning(f"An error occurred: {e}")
+            finally:
                 logger.info(f"Reconnecting in {self._reconnect_interval} seconds...")
                 await asyncio.sleep(self._reconnect_interval)
 
