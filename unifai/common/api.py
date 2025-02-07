@@ -21,7 +21,7 @@ class API:
         headers: Dict[str, Any] = {},
         **kwargs,
     ) -> Dict[str, Any]:
-        if 'Authorization' not in headers:
+        if 'Authorization' not in headers and self.api_key:
             headers['Authorization'] = self.api_key
         response = await self.client.request(
             method,
