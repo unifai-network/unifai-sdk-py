@@ -7,6 +7,7 @@ from chromadb.api import Collection
 from chromadb.types import Where, WhereDocument
 import numpy as np
 from numpy.typing import NDArray
+import json
 
 from .base import Memory, ChromaConfig, StorageType, MemoryType
 from .exceptions import EmptyContentError, CollectionError, ConnectionError, MemoryError
@@ -123,6 +124,7 @@ class ChromaMemoryManager(MemoryManager):
             if not memory.embedding:
                 memory = await self.add_embedding_to_memory(memory)
             metadata = serialize_memory(memory)
+            
             await asyncio.to_thread(
                 self.collection.add,
                 ids=[str(memory.id)],
@@ -137,31 +139,61 @@ class ChromaMemoryManager(MemoryManager):
         self,
         content: str,
         count: int,
-        threshold: float = 0.0
+        threshold: float = 0.0,
+        where: Optional[Dict[str, Any]] = None
     ) -> List[Memory]:
-        """Get base memories using content similarity"""
+        """Get base memories using content similarity and optional metadata filters"""
         try:
             embedding = self.embedding_function([content])[0]
+            if isinstance(embedding, np.ndarray):
+                embedding = embedding.tolist()
             return await self._get_memories_with_filter(
-                where=None,
+                where=where,
                 count=count,
                 threshold=threshold,
-                query_embedding=embedding
+                query_embedding=embedding if content.strip() else None
             )
         except Exception as e:
             raise MemoryError(f"Failed to get base memories: {str(e)}")
 
     async def get_memories(
-    self,
-    content: str,
-    count: int = 5,
-    threshold: float = 0.0,
-    **kwargs
+        self,
+        content: str,
+        count: int = 5,
+        threshold: float = 0.0,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> List[Memory]:
-        base_memories = await self._get_base_memories(content, count * 2, threshold)
+        """Get memories with content similarity and metadata filtering"""
+        where = None
+        if metadata:
+            conditions = []
+            for key, value in metadata.items():
+                if isinstance(value, (str, int, float, bool)):
+                    conditions.append({
+                        key: {"$eq": str(value)}
+                    })
+                else:
+                    conditions.append({
+                        key: {"$eq": json.dumps(value)}
+                    })
+    
+            if len(conditions) == 1:
+                where = conditions[0]
+    
+            elif len(conditions) > 1:
+                where = {"$and": conditions}
         
+        base_memories = await self._get_base_memories(
+            content=content, 
+            count=count * 2, 
+            threshold=threshold,
+            where=where
+        )
+
         if not self.plugins:
             return base_memories[:count]
+        
         context = MemoryContext(
             content=content,
             count=count,
@@ -307,7 +339,7 @@ class ChromaMemoryManager(MemoryManager):
 
     async def _get_memories_with_filter(
         self,
-        where: Dict[str, Any],
+        where: Optional[Dict[str, Any]],
         count: int,
         threshold: float = 0.0,
         query_embedding: Optional[List[float]] = None
@@ -318,13 +350,34 @@ class ChromaMemoryManager(MemoryManager):
                     query_embedding = query_embedding.tolist()
                 elif not isinstance(query_embedding, list):
                     query_embedding = list(query_embedding)
-            results = await asyncio.to_thread(
-                self.collection.query,
-                query_embeddings=[query_embedding] if query_embedding else None,
-                n_results=count,
-                where=where,
-                include=["metadatas", "embeddings", "distances"]
-            )
+            
+            query_where = None
+            if where is not None and where:
+                query_where = where
+            if query_embedding is None:
+                results = await asyncio.to_thread(
+                    self.collection.get,
+                    where=query_where,
+                    limit=count,
+                    include=["metadatas", "embeddings"]
+                )
+                if results["ids"]:
+                    results = {
+                        "ids": [results["ids"]],
+                        "distances": [[1.0] * len(results["ids"])],
+                        "metadatas": [results["metadatas"]],
+                        "embeddings": [results["embeddings"]] if "embeddings" in results else None
+                    }
+                else:
+                    return []
+            else:
+                results = await asyncio.to_thread(
+                    self.collection.query,
+                    query_embeddings=[query_embedding],
+                    n_results=count,
+                    where=query_where,
+                    include=["metadatas", "embeddings", "distances"]
+                )
             
             if not isinstance(results["ids"], list) or not results["ids"]:
                 return []
@@ -353,16 +406,16 @@ class ChromaMemoryManager(MemoryManager):
                         embedding = list(embedding_data)
                 
                 try:
+                    
                     memory = deserialize_memory(
                         memory_id=memory_id,
                         metadata=results["metadatas"][0][idx],
                         embedding=embedding,
                         similarity=similarity
                     )
-                    
                     if similarity is None or similarity >= threshold:
                         memories.append(memory)
-                except Exception as e:
+                except Exception as e: 
                     print(f"Failed to deserialize memory {memory_id}: {str(e)}")
                     continue
             
