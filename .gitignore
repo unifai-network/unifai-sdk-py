@@ -21,6 +21,7 @@ var/
 *.egg
 *.bin
 *.sqlite3
+.env
 
 # Virtual environments
 venv/
