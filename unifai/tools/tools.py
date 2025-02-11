@@ -38,7 +38,7 @@ class FunctionName(Enum):
 
 function_list: List[Function] = [
     Function(
-        name=FunctionName.SEARCH_TOOLS,
+        name=FunctionName.SEARCH_TOOLS.value,
         description="Search for tools. The tools cover a wide range of domains include data source, API, SDK, etc. Try searching whenever you need to use a tool.",
         parameters={
             "type": "object",
@@ -56,7 +56,7 @@ function_list: List[Function] = [
         },
     ),
     Function(
-        name=FunctionName.CALL_TOOL,
+        name=FunctionName.CALL_TOOL.value,
         description="Call a tool returned by search_tools",
         parameters={
             "type": "object",
@@ -109,7 +109,7 @@ class Tools:
 
         :return: List of tools
         """
-        return [tool.model_dump() for tool in tool_list]
+        return [tool.model_dump(mode="json") for tool in tool_list]
 
     async def call_tool(self, name: str | FunctionName, arguments: dict | str) -> Any:
         """
@@ -120,11 +120,11 @@ class Tools:
         :return: The result of the function call
         """
         name = name if isinstance(name, str) else name.value
-        arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+        args = json.loads(arguments) if isinstance(arguments, str) else arguments
         if name == FunctionName.SEARCH_TOOLS.value:
-            return await self._api.search_tools(arguments)
+            return await self._api.search_tools(args)
         elif name == FunctionName.CALL_TOOL.value:
-            return await self._api.call_tool(arguments)
+            return await self._api.call_tool(args)
         else:
             logger.warning(f"Unknown tool name: {name}")
             return None
@@ -143,7 +143,7 @@ class Tools:
                 content=json.dumps(result),
             )
 
-    async def call_tools(self, tool_calls: Optional[List[OpenAIToolCall]], concurrency: int = 1) -> List[OpenAIToolResult]:
+    async def call_tools(self, tool_calls: Optional[List[OpenAIToolCall]], concurrency: int = 1) -> List[dict[str, Any]]:
         """
         Call multiple tools based on OpenAI tool call input/output format.
 
@@ -161,4 +161,4 @@ class Tools:
             ) for tool_call in tool_calls or []
         ]
         results = await asyncio.gather(*tasks)
-        return [result.model_dump() for result in results if result is not None]
+        return [result.model_dump(mode="json") for result in results if result is not None]

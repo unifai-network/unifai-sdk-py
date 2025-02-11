@@ -127,6 +127,8 @@ class Toolkit:
 
     async def _handle_messages(self):
         while True:
+            assert self._ws
+
             message = await self._ws.recv()
 
             logger.debug(f"Received raw message: {message}")
@@ -142,7 +144,7 @@ class Toolkit:
 
             if msg.type == ServerToToolkitMessageType.ACTION:
                 try:
-                    action_data = ActionMessageData(**msg.data)
+                    action_data = ActionMessageData.model_validate(msg.data)
                 except ValidationError as e:
                     logger.warning(f"Action message validation error: {e}")
                     continue
