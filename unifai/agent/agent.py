@@ -1,77 +1,31 @@
 from __future__ import annotations
 import asyncio
 import logging
-from .api import API
-from .data import save_data, save_to_memory
-from .messaging import MessagingHandler
+import os
+from telegram.ext import ApplicationBuilder
 from .model import ModelManager
-from .summary import Summarizer
-from datetime import datetime
 from .utils import load_prompt, load_all_prompts
-from ..common.const import FRONTEND_API_ENDPOINT, BACKEND_WS_ENDPOINT
-from .memory.manager import MemoryManager
-from .memory.importance import ImportanceCalculator
-from .memory.embedding import EmbeddingGenerator
-from .memory.working_memory import WorkingMemory
+from ..common.const import BACKEND_WS_ENDPOINT
 
 logger = logging.getLogger(__name__)
 
 class Agent:
-    vision_range_buildings = 16
-    vision_range_players = 16
-    min_num_buildings = 10
-    min_num_players = 10
-    post_story = True
-    post_story_interval_hours = 24
-    working_memory_max_size = 10
-
-    def __init__(self, api_key, name, data_dir='data'):
+    def __init__(self, api_key):
         self.api_key = api_key
-        self.name = name
-        self.data_dir = data_dir
         self._prompts = {}
         self._models = {
-            'default': 'gpt-4o-mini',
-            'embedding': 'text-embedding-3-small',
+            'default': 'gpt-4o',
         }
-        self._websocket = None
-        self.model_manager = ModelManager(self)
-        self.importance_calculator = ImportanceCalculator(self)
-        self.embedding_generator = EmbeddingGenerator(self.model_manager)
-        self.memory_manager = MemoryManager(
-            importance_calculator=self.importance_calculator,
-            embedding_generator=self.embedding_generator,
-            agent=self,
-        )
-        self.planning = None
-        self.working_memory = WorkingMemory(
-            memory_manager=self.memory_manager,
-            max_size=self.working_memory_max_size,
-            agent=self,
-        )
-        
-        self.messaging_handler = MessagingHandler(self)
-        self.summarizer = Summarizer(self)
-        self.api = API(self.api_key)
-        self.set_api_endpoint(FRONTEND_API_ENDPOINT)
+        self.model_manager = ModelManager()
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self._stop_event = asyncio.Event()
         self._tasks = []
 
     def set_ws_endpoint(self, endpoint):
-        self.ws_uri = f"{endpoint}?type=player&api-key={self.api_key}&name={self.name}"
-
-    def set_api_endpoint(self, endpoint):
-        self.api.set_endpoint(endpoint)
+        self.ws_uri = f"{endpoint}?type=player&api-key={self.api_key}"
 
     def set_chat_completion_function(self, f):
         self.model_manager.set_chat_completion_function(f)
-
-    def set_image_generation_function(self, f):
-        self.model_manager.set_image_generation_function(f)
-
-    async def summarize(self, since_hours=24, min_responses=10, batch_size=256, concurrency=8, max_retries=4):
-        return await self.summarizer.summarize(since_hours, min_responses, batch_size, concurrency, max_retries)
 
     def get_all_prompts(self):
         """
@@ -155,10 +109,6 @@ class Agent:
         """
         self._models[prompt_key] = model
 
-    async def get_model_response(self, prompt_key, system_prompt=None, **kwargs):
-        prompt = self.get_prompt(prompt_key).format(**kwargs)
-        return await self.model_manager.get_model_response(prompt, prompt_key=prompt_key, system_prompt=system_prompt)
-
     def set_models(self, models):
         """
         Replace all custom models with a new dictionary.
@@ -181,55 +131,30 @@ class Agent:
         """
         self._models.update(models)
 
-    async def _start_messaging(self):
-        while not self._stop_event.is_set():
-            try:
-                async with await self.messaging_handler.connect(self.ws_uri) as websocket:
-                    self._websocket = websocket
-                    await self.messaging_handler.handle_messages(websocket, self._stop_event)
-            except asyncio.CancelledError:
-                logger.info("Messaging task cancelled.")
-                break
-            except Exception as e:
-                logger.error(f"Error: {e}. Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
-
-    async def _start_summarizer(self):
-        if not self.post_story:
-            return
-        while not self._stop_event.is_set():
-            await asyncio.sleep(60)
-            try:
-                time_since_last_post = self.summarizer.time_since_last_post()
-                if time_since_last_post.total_seconds() >= self.post_story_interval_hours * 3600:
-                    await self.summarizer.post_story(since_hours=self.post_story_interval_hours)
-            except asyncio.CancelledError:
-                logger.info("Summarizer task cancelled.")
-                break
-            except Exception as e:
-                logger.error(f"Post story failed: {e}")
-
-    async def _save_data(self, data_type, data):
-        save_data(self.data_dir, self.name, data_type, data)
-        await save_to_memory(data, self.memory_manager)
-
     def run(self):
         """
         Synchronous entry point to run the agent.
         """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            asyncio.run(self.start())
+            loop.run_until_complete(self.start())
         except KeyboardInterrupt:
             logger.info("Agent interrupted by user. Shutting down...")
-            asyncio.run(self.stop())
+            loop.run_until_complete(self.stop())
+        finally:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
 
     async def start(self):
         """
         Asynchronous entry point to run the agent.
         """
         self._tasks = [
-            asyncio.create_task(self._start_messaging()),
-            asyncio.create_task(self._start_summarizer())
+            asyncio.create_task(self._start_telegram()),
         ]
         await self._stop_event.wait()
         for task in self._tasks:
@@ -243,7 +168,27 @@ class Agent:
         """
         logger.info("Stopping the agent...")
         self._stop_event.set()
-        if self._websocket:
-            await self._websocket.close()
         if hasattr(self, '_tasks'):
             await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def _start_telegram(self):
+        while not self._stop_event.is_set():
+            try:
+                application = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN', '')).build()
+                started = False
+                await application.initialize()
+                await application.start()
+                await application.updater.start_polling() # type: ignore
+                started = True
+                await self._stop_event.wait()
+            except asyncio.CancelledError:
+                logger.info("Telegram task cancelled.")
+                break
+            except Exception as e:
+                logger.error(f"Error: {e}. Reconnecting in 5 seconds...")
+                await asyncio.sleep(5)
+            finally:
+                if started:
+                    await application.updater.stop() # type: ignore
+                    await application.stop()
+                    await application.shutdown()
