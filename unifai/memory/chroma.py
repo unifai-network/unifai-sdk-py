@@ -423,3 +423,54 @@ class ChromaMemoryManager(MemoryManager):
             
         except Exception as e:
             raise MemoryError(f"Failed to get memories with filter: {str(e)}")
+
+    async def get_recent_memories(
+        self,
+        count: int = 5,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> List[Memory]:
+        """Get most recent memories based on created_at timestamp"""
+        where = None
+        if metadata:
+            conditions = []
+            for key, value in metadata.items():
+                if isinstance(value, (str, int, float, bool)):
+                    conditions.append({
+                        key: {"$eq": str(value)}
+                    })
+                else:
+                    conditions.append({
+                        key: {"$eq": json.dumps(value)}
+                    })
+
+            if len(conditions) == 1:
+                where = conditions[0]
+            elif len(conditions) > 1:
+                where = {"$and": conditions}
+
+        results = await asyncio.to_thread(
+            self.collection.get,
+            where=where,
+            limit=count,
+            include=["metadatas", "embeddings"]
+        )
+        
+        if not results["ids"]:
+            return []
+        
+        memories = []
+        for idx, memory_id in enumerate(results["ids"]):
+            try:
+                memory = deserialize_memory(
+                    memory_id=memory_id,
+                    metadata=results["metadatas"][idx],
+                    embedding=results["embeddings"][idx] if "embeddings" in results else None
+                )
+                memories.append(memory)
+            except Exception as e:
+                print(f"Failed to deserialize memory {memory_id}: {str(e)}")
+                continue
+        
+        # Sort by created_at timestamp in descending order
+        memories.sort(key=lambda x: x.created_at, reverse=True)
+        return memories[:count]
