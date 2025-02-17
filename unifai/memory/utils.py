@@ -20,6 +20,8 @@ def serialize_memory(memory: Memory) -> Dict[str, Any]:
         **{k: str(v) for k, v in memory.metadata.items()},
         **({"tools": json.dumps([t.model_dump() for t in memory.tools])} if memory.tools else {})
     }
+    
+    metadata["content"] = json.dumps(memory.content)
     return metadata
 
 def deserialize_memory(
@@ -42,13 +44,20 @@ def deserialize_memory(
         except json.JSONDecodeError:
             tools = None
 
+    try:
+        content = json.loads(metadata["content"])
+    except (json.JSONDecodeError, KeyError):
+        content = {
+            "text": metadata["content_text"]
+        }
+
     memory_data = {
         "id": to_uuid(memory_id),
         "user_id": to_uuid(metadata.get("user_id", metadata.get("chat_id"))),
         "agent_id": to_uuid(metadata["agent_id"]),
         "memory_type": metadata.get("memory_type", metadata.get("type", "interaction")),
         "role": metadata.get("role", "system"),
-        "content": {"text": metadata["content_text"]},
+        "content": content,
         "created_at": datetime.fromisoformat(metadata.get("created_at", metadata.get("timestamp"))),
         "unique": metadata.get("unique", False),
         "tools": tools,
@@ -59,7 +68,7 @@ def deserialize_memory(
             if k not in {
                 "user_id", "agent_id", "memory_type", "role", 
                 "content_text", "created_at", "unique", "tools",
-                "chat_id", "type", "timestamp"
+                "chat_id", "type", "timestamp", "content"
             }
         }
     }
