@@ -1,6 +1,3 @@
-import sys
-sys.path.append('.')
-
 import asyncio
 import logging
 import os
@@ -115,7 +112,7 @@ class TelegramAgent(unifai.Agent):
         """Generate a consistent agent ID."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"telegram-bot-{self.bot_name}")
 
-    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 20) -> tuple[str, list[ToolInfo]]:
+    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 20) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
         memory_manager = self.get_memory_manager(user_id, chat_id)
         tools = unifai.Tools(api_key=self.api_key)
 
@@ -137,8 +134,19 @@ class TelegramAgent(unifai.Agent):
         )
 
         messages = []
-        system_prompt = self.get_prompt("agent.telegram") or "..."
+        system_prompt = self.get_prompt("agent.telegram") 
         messages.append({"content": system_prompt, "role": "system"})
+        
+        if recent_memories:
+            recent_interactions = sorted(
+                recent_memories,
+                key=lambda x: x.metadata.get("timestamp", ""),
+                reverse=True
+            )[:history_count]
+            
+            for mem in recent_interactions:
+                if mem.content.get('interaction', {}).get('messages'):
+                    messages.extend(mem.content['interaction']['messages'])
 
         if relevant_memories:
             facts = []
@@ -152,30 +160,27 @@ class TelegramAgent(unifai.Agent):
             if facts:
                 messages.append({
                     "role": "system",
-                    "content": f"Related facts:\n{json.dumps(facts, indent=2)}"
+                    "content": "Relevant facts:\n" + "\n".join([f"- {fact}" for fact in facts])
                 })
+            
             if goals:
                 messages.append({
-                    "role": "system", 
-                    "content": f"Active goals:\n{json.dumps(goals, indent=2)}"
+                    "role": "system",
+                    "content": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
                 })
 
-        if recent_memories:
-            recent_interactions = sorted(
-                recent_memories,
-                key=lambda x: x.metadata.get("timestamp", "")
-            )[:history_count]
-            
-            for mem in recent_interactions:
-                if mem.content.get('messages'):
-                    messages.extend(mem.content['messages'])
-
         messages.append({"content": message, "role": "user"})
-        
-        interaction_content = []
+        interaction = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ]
+        }
         tool_infos_collection = []
         reply = ""
-
+        
         while True:
             response = await self.model_manager.chat_completion(
                 model='gpt-4o',
@@ -185,64 +190,54 @@ class TelegramAgent(unifai.Agent):
             
             assistant_message = response.choices[0].message
             
+            assistant_content = ""
+            if assistant_message.content:
+                assistant_content = assistant_message.content
+                interaction["messages"].append({
+                    "role": "assistant",
+                    "content": assistant_content
+                })
+            
+            if assistant_message.tool_calls:
+                for tool_call in assistant_message.tool_calls:
+                    tool_info = ToolInfo(
+                        name=tool_call.function.name,
+                        description=tool_call.function.arguments
+                    )
+                    tool_infos_collection.append(tool_info)
+
+                    tool_call_message = {
+                        "role": "assistant",
+                        "content": f"Using tool: {tool_call.function.name}\nArguments: {tool_call.function.arguments}"
+                    }
+                    messages.append(tool_call_message)
+                    interaction["messages"].append(tool_call_message)
+                
+                results = await tools.call_tools(assistant_message.tool_calls)
+                if not results:
+                    break
+                
+                for result in results:
+                    tool_result = {
+                        "role": "assistant",
+                        "content": result["content"],
+                        "tool_call_id": result["tool_call_id"]
+                    }
+                    messages.append(tool_result)
+                    interaction["messages"].append(tool_result)
+                    
+            
             if assistant_message.content:
                 reply += f'{assistant_message.content}\n'
-                interaction_content.append({
-                    "role": "assistant",
-                    "content": assistant_message.content
-                })
-
-            messages.append(assistant_message)
             
             if not assistant_message.tool_calls:
                 break
-                
-            tool_infos = [
-                ToolInfo(
-                    name=tool_call.function.name,
-                    description=tool_call.function.arguments
-                )
-                for tool_call in assistant_message.tool_calls
-            ]
-            tool_infos_collection.extend(tool_infos)
-            
-            results = await tools.call_tools(assistant_message.tool_calls)
-            
-            if not results:
-                break
-            
-            for result in results:
-                interaction_content.append({
-                    "role": "tool",
-                    "tool_call_id": result["tool_call_id"],
-                    "content": result["content"]
-                })
-                messages.append(result)
-        memory = Memory(
-            id=uuid.uuid4(),
-            user_id=self.generate_uuid_from_id(str(user_id)),
-            agent_id=self._agent_id,
-            content={
-                "text": f"User: {message}\nAssistant: {reply}",
-                "messages": messages,
-                "context": {
-                    "user_message": message,
-                    "messages": interaction_content
-                }
-            },
-            memory_type=MemoryType.INTERACTION,
-            metadata={
-                "chat_id": str(chat_id),
-                "timestamp": str(datetime.now().isoformat()),
-                "has_tools": bool(tool_infos_collection)
-            },
-            role=MemoryRole.SYSTEM,
-            tools=tool_infos_collection if tool_infos_collection else [],
-            unique=False
+        return (
+            reply.rstrip('\n') if reply else "Sorry, something went wrong.",
+            tool_infos_collection,
+            messages,
+            interaction["messages"]
         )
-        await memory_manager.create_memory(memory)
-        
-        return reply.rstrip('\n') if reply else "Sorry, something went wrong.", tool_infos_collection
 
     async def _start_telegram(self):
         while not self._stop_event.is_set():
@@ -285,26 +280,23 @@ class TelegramAgent(unifai.Agent):
         chat_id: str,
         history_count: int = 20,
     ) -> str:
-        # Get or create a lock for this chat_id
         if chat_id not in self._chat_locks:
             self._chat_locks[chat_id] = asyncio.Lock()
         
-        # Acquire the lock for this chat_id
         async with self._chat_locks[chat_id]:
             memory_manager = self.get_memory_manager(user_id, chat_id)
             
-            reply, tool_infos = await self.get_reply(
+            reply, tool_infos, messages, interaction_content = await self.get_reply(
                 message, 
                 user_id, 
                 chat_id, 
                 history_count=history_count
             )
             
-            interaction_content = f"User: {message}\nAssistant: {reply}"
             user_uuid = self.generate_uuid_from_id(str(user_id))
             
-            fact_result = await self.fact_reflector.reflect(interaction_content)
-            goal_result = await self.goal_reflector.reflect(interaction_content)
+            fact_result = await self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply}")
+            goal_result = await self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply}")
             
             base_metadata = {
                 "chat_id": str(chat_id),
@@ -376,7 +368,10 @@ class TelegramAgent(unifai.Agent):
                 user_id=user_uuid,
                 agent_id=self._agent_id,
                 content={
-                    "text": interaction_content
+                    "text": f"User: {message}\nAssistant: {reply}",
+                    "interaction": {
+                        "messages": interaction_content
+                    }
                 },
                 memory_type=MemoryType.INTERACTION,
                 metadata=metadata,
