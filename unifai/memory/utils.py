@@ -20,7 +20,7 @@ def serialize_memory(memory: Memory) -> Dict[str, Any]:
         **{k: str(v) for k, v in memory.metadata.items()},
         **({"tools": json.dumps([t.model_dump() for t in memory.tools])} if memory.tools else {})
     }
-    
+
     metadata["content"] = json.dumps(memory.content)
     return metadata
 
@@ -68,9 +68,9 @@ def deserialize_memory(
             if k not in {
                 "user_id", "agent_id", "memory_type", "role", 
                 "content_text", "created_at", "unique", "tools",
-                "chat_id", "type", "timestamp", "content"
+                "chat_id", "type", "content"
             }
         }
     }
-    
+
     return TypeAdapter(Memory).validate_python(memory_data)
