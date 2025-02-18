@@ -24,6 +24,7 @@ load_dotenv()
     
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
     
 class TelegramAgent(unifai.Agent):
     def __init__(self, api_key: str):
@@ -118,9 +119,6 @@ class TelegramAgent(unifai.Agent):
 
         recent_memories = await memory_manager.get_recent_memories(
             count=history_count,
-            metadata={
-                "chat_id": str(chat_id),
-            }
         )
 
         relevant_memories = await memory_manager.get_memories(
@@ -128,13 +126,12 @@ class TelegramAgent(unifai.Agent):
             count=5, 
             threshold=0.7,
             metadata={
-                "chat_id": str(chat_id),
                 "type": {"$in": ["fact", "goal"]}
             }
         )
 
         messages = []
-        system_prompt = self.get_prompt("agent.telegram") 
+        system_prompt = self.get_prompt("agent.system") 
         messages.append({"content": system_prompt, "role": "system"})
         
         if recent_memories:
@@ -143,10 +140,18 @@ class TelegramAgent(unifai.Agent):
                 key=lambda x: x.metadata.get("timestamp", ""),
                 reverse=True
             )[:history_count]
-            
+
+            recent_interactions = list(reversed(recent_interactions))
+
             for mem in recent_interactions:
                 if mem.content.get('interaction', {}).get('messages'):
-                    messages.extend(mem.content['interaction']['messages'])
+                    has_non_tool_message = False
+                    for msg in mem.content['interaction']['messages']:
+                        if msg.get('tool_call') != 'tool':
+                            has_non_tool_message = True
+                            messages.append(msg)
+                        elif has_non_tool_message:
+                            messages.append(msg)
 
         if relevant_memories:
             facts = []
@@ -183,55 +188,44 @@ class TelegramAgent(unifai.Agent):
         
         while True:
             response = await self.model_manager.chat_completion(
-                model='gpt-4o',
+                model='anthropic/claude-3-5-sonnet-20241022',
                 messages=messages,
                 tools=tools.get_tools(),
             )
             
             assistant_message = response.choices[0].message
-            
-            assistant_content = ""
-            if assistant_message.content:
-                assistant_content = assistant_message.content
-                interaction["messages"].append({
-                    "role": "assistant",
-                    "content": assistant_content
-                })
-            
-            if assistant_message.tool_calls:
-                for tool_call in assistant_message.tool_calls:
-                    tool_info = ToolInfo(
-                        name=tool_call.function.name,
-                        description=tool_call.function.arguments
-                    )
-                    tool_infos_collection.append(tool_info)
 
-                    tool_call_message = {
-                        "role": "assistant",
-                        "content": f"Using tool: {tool_call.function.name}\nArguments: {tool_call.function.arguments}"
-                    }
-                    messages.append(tool_call_message)
-                    interaction["messages"].append(tool_call_message)
-                
-                results = await tools.call_tools(assistant_message.tool_calls)
-                if not results:
-                    break
-                
-                for result in results:
-                    tool_result = {
-                        "role": "assistant",
-                        "content": result["content"],
-                        "tool_call_id": result["tool_call_id"]
-                    }
-                    messages.append(tool_result)
-                    interaction["messages"].append(tool_result)
-                    
-            
+            if assistant_message.content or assistant_message.tool_calls:
+                messages.append(assistant_message)
+                interaction["messages"].append(assistant_message.model_dump(mode='json'))
+
             if assistant_message.content:
                 reply += f'{assistant_message.content}\n'
-            
+
             if not assistant_message.tool_calls:
                 break
+            
+            for tool_call in assistant_message.tool_calls:
+                tool_info = ToolInfo(
+                    name=tool_call.function.name,
+                    description=tool_call.function.arguments
+                )
+                tool_infos_collection.append(tool_info)
+                
+                args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
+                if tool_call.function.name == "search_tools":
+                    reply += f"Searching tools: {args.get('query')}...\n"
+                elif tool_call.function.name == "call_tool":
+                    reply += f"Calling tool: {args.get('action')}...\n"
+
+            results = await tools.call_tools(assistant_message.tool_calls)
+
+            if not results:
+                break
+
+            messages.extend(results)
+            interaction["messages"].extend(results)
+
         return (
             reply.rstrip('\n') if reply else "Sorry, something went wrong.",
             tool_infos_collection,

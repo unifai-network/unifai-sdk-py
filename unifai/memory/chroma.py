@@ -427,34 +427,19 @@ class ChromaMemoryManager(MemoryManager):
     async def get_recent_memories(
         self,
         count: int = 5,
-        metadata: Optional[Dict[str, Any]] = None,
     ) -> List[Memory]:
         """Get most recent memories based on created_at timestamp"""
-        where = None
-        if metadata:
-            conditions = []
-            for key, value in metadata.items():
-                if isinstance(value, (str, int, float, bool)):
-                    conditions.append({
-                        key: {"$eq": str(value)}
-                    })
-                else:
-                    conditions.append({
-                        key: {"$eq": json.dumps(value)}
-                    })
-
-            if len(conditions) == 1:
-                where = conditions[0]
-            elif len(conditions) > 1:
-                where = {"$and": conditions}
+        total_count = await asyncio.to_thread(
+            self.collection.count,
+        )
 
         results = await asyncio.to_thread(
             self.collection.get,
-            where=where,
+            offset=total_count - count,
             limit=count,
             include=["metadatas", "embeddings"]
         )
-        
+
         if not results["ids"]:
             return []
         
