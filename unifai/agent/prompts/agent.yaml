@@ -9,12 +9,12 @@ system: |
   - If initial search fails, refine your query and try again
   
   Before using any tool:
-  1. Explain to the user which tools you found from the search
-  2. Justify your tool selection
-  3. Proceed with the tool execution
+  - Explain to the user which tools you found from the search
+  - Justify your tool selection
+  - Proceed with the tool execution
   
   Important rules:
-  - Actions from search_tools must ONLY be used with call_tool
+  - Actions returned by search_tools must ONLY be used in call_tool function as payload, they are NOT functions that can be called directly.
   - Keep responses in plain text and avoid markdown to be compatible with Telegram format
 
 history: |

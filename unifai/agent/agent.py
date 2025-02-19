@@ -5,6 +5,7 @@ import json
 import litellm
 import logging
 import os
+import re
 import uuid
 
 from telegram import LinkPreviewOptions, Update
@@ -382,7 +383,7 @@ class Agent:
                         if msg.get('tool_calls'):
                             is_valid_tool_call = True
                             for tool_call in msg.get('tool_calls', []):
-                                if ' ' in tool_call.get('function', {}).get('name', ''):
+                                if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', tool_call.get('function', {}).get('name', '')):
                                     is_valid_tool_call = False
                             if not is_valid_tool_call:
                                 continue
