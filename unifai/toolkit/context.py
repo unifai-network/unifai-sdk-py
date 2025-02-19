@@ -60,4 +60,7 @@ class ActionContext:
                 payment=result.payment,
             )
         )
-        await self.toolkit._ws.send(action_result_message.model_dump_json())
+        if self.toolkit._ws:
+            await self.toolkit._ws.send(action_result_message.model_dump_json())
+        else:
+            raise RuntimeError("WebSocket is not connected")

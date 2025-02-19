@@ -2,25 +2,11 @@ from typing import List, Dict, Any, Callable, Awaitable
 from .base import BaseReflector
 from .types import ReflectionType, ReflectionResult
 import json
-import litellm
-
-ChatCompletionFn = Callable[[List[Dict[str, Any]], Any], Awaitable[Any]]
-
-async def default_chat_completion(
-    messages: List[Dict[str, Any]], 
-    tools: Any = None
-) -> Any:
-    response = await litellm.acompletion(
-        model="openai/gpt-4o-mini",
-        messages=messages,
-        tools=tools
-    )
-    return response
 
 class GoalReflector(BaseReflector):
     def __init__(
         self, 
-        chat_completion_fn: ChatCompletionFn = default_chat_completion,
+        chat_completion_fn,
         model: str = "gpt-4o-mini",
     ):
         super().__init__(
@@ -69,8 +55,9 @@ class GoalReflector(BaseReflector):
 
         try:
             response = await self.chat_completion_fn(
-                messages,
-                tools=None  # No tools needed for reflection
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"}
             )
             
             llm_response = response.choices[0].message.content

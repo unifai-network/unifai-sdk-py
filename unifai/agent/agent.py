@@ -1,11 +1,34 @@
 from __future__ import annotations
+from datetime import datetime
 import asyncio
+import json
+import litellm
 import logging
 import os
-from telegram.ext import ApplicationBuilder
+import uuid
+
+from telegram import LinkPreviewOptions, Update
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    filters,
+    MessageHandler,
+)
+
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts
 from ..common.const import BACKEND_WS_ENDPOINT
+from ..memory import (
+    ChromaConfig,
+    ChromaMemoryManager,
+    Memory,
+    MemoryRole,
+    MemoryType,
+    StorageType,
+    ToolInfo,
+)
+from ..reflector import FactReflector, GoalReflector
+from ..tools import Tools
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +43,13 @@ class Agent:
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self._stop_event = asyncio.Event()
         self._tasks = []
+
+        self.fact_reflector = FactReflector(litellm.acompletion)
+        self.goal_reflector = GoalReflector(litellm.acompletion)
+        self._setup_memory_manager()
+        self._setup_telegram()
+        self._agent_id = self.generate_agent_id()
+        self._chat_locks = {}
 
     def set_ws_endpoint(self, endpoint):
         self.ws_uri = f"{endpoint}?type=player&api-key={self.api_key}"
@@ -174,11 +204,26 @@ class Agent:
     async def _start_telegram(self):
         while not self._stop_event.is_set():
             try:
-                application = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN', '')).build()
                 started = False
+                application = ApplicationBuilder().token(self.bot_token).build()
+
+                if not application.updater:
+                    raise RuntimeError("Updater is not initialized")
+                
+                filter_conditions = (
+                    (filters.CaptionRegex(f"@{self.bot_name}") & (~filters.COMMAND)) |
+                    (filters.Mention(self.bot_name) & (~filters.COMMAND)) |
+                    (filters.ChatType.PRIVATE & (~filters.COMMAND))
+                )
+                application.add_handler(MessageHandler(
+                    filter_conditions,
+                    self.handle_message,
+                    block=False
+                ))
+
                 await application.initialize()
                 await application.start()
-                await application.updater.start_polling() # type: ignore
+                await application.updater.start_polling()
                 started = True
                 await self._stop_event.wait()
             except asyncio.CancelledError:
@@ -188,7 +233,311 @@ class Agent:
                 logger.error(f"Error: {e}. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
             finally:
-                if started:
-                    await application.updater.stop() # type: ignore
+                if started and application.updater:
+                    await application.updater.stop()
                     await application.stop()
                     await application.shutdown()
+
+    def _setup_memory_manager(self):
+        self.memory_config = ChromaConfig(
+            storage_type=StorageType.HTTP,
+            host=os.getenv("CHROMA_HOST", "localhost"),
+            port=int(os.getenv("CHROMA_PORT", "8000")),
+        )
+    
+    def _setup_telegram(self):
+        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN', "")
+        self.bot_name = os.getenv('TELEGRAM_BOT_NAME', "")
+        if not self.bot_token:
+            raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
+
+    def get_memory_manager(self, user_id: str, chat_id: str) -> ChromaMemoryManager:
+        chat_id = chat_id or user_id
+        
+        def sanitize_id(id_str: str) -> str:
+            sanitized = ''.join(c if c.isalnum() else '-' for c in id_str)
+            if not sanitized[0].isalpha():
+                sanitized = 'id-' + sanitized
+            if len(sanitized) < 3:
+                sanitized = sanitized + '-collection'
+            elif len(sanitized) > 63:
+                sanitized = sanitized[:60] + '-col'
+            return sanitized
+
+        collection_name = sanitize_id(chat_id)
+        
+        config = ChromaConfig(
+            storage_type=self.memory_config.storage_type,
+            host=self.memory_config.host,
+            port=self.memory_config.port,
+            collection_name=collection_name
+        )
+        return ChromaMemoryManager(config)
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.from_user or not update.effective_chat:
+            return
+
+        user_message = update.message.text or update.message.caption
+        if not user_message:
+            return
+        reply = await self.process_message_with_memory(
+            user_message,
+            str(update.message.from_user.id),
+            str(update.effective_chat.id),
+        )
+
+        MAX_MESSAGE_LENGTH = 4000
+        messages = [reply[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(reply), MAX_MESSAGE_LENGTH)]
+        
+        for message in messages:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,  
+                text=message, 
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
+
+    def generate_uuid_from_id(self, id_str: str) -> uuid.UUID:
+        """Generate a UUID from a string identifier."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, str(id_str))
+
+    def generate_agent_id(self) -> uuid.UUID:
+        """Generate a consistent agent ID."""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, f"telegram-bot-{self.bot_name}")
+
+    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
+        memory_manager = self.get_memory_manager(user_id, chat_id)
+        tools = Tools(api_key=self.api_key)
+
+        recent_memories = await memory_manager.get_recent_memories(
+            count=history_count,
+        )
+
+        relevant_memories = await memory_manager.get_memories(
+            content=message,
+            count=5, 
+            threshold=0.7,
+            metadata={
+                "type": {"$in": ["fact", "goal"]}
+            }
+        )
+
+        messages = []
+        system_prompt = self.get_prompt("agent.system") 
+        messages.append({"content": system_prompt, "role": "system"})
+
+        if relevant_memories:
+            facts = []
+            goals = []
+            for mem in relevant_memories:
+                if mem.memory_type == MemoryType.FACT:
+                    facts.extend(mem.content.get('claims', []))
+                elif mem.memory_type == MemoryType.GOAL:
+                    goals.extend(mem.content.get('goals', []))
+            
+            if facts:
+                messages.append({
+                    "role": "system",
+                    "content": "Relevant facts:\n" + "\n".join([f"- {fact}" for fact in facts])
+                })
+            
+            if goals:
+                messages.append({
+                    "role": "system",
+                    "content": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
+                })
+
+        if recent_memories:
+            recent_interactions = sorted(
+                recent_memories,
+                key=lambda x: x.metadata.get("timestamp", ""),
+                reverse=True
+            )[:history_count]
+
+            recent_interactions = list(reversed(recent_interactions))
+
+            for mem in recent_interactions:
+                if mem.content.get('interaction', {}).get('messages'):
+                    has_non_tool_message = False
+                    for msg in mem.content['interaction']['messages']:
+                        if msg.get('tool_calls'):
+                            is_valid_tool_call = True
+                            for tool_call in msg.get('tool_calls', []):
+                                if ' ' in tool_call.get('function', {}).get('name', ''):
+                                    is_valid_tool_call = False
+                            if not is_valid_tool_call:
+                                continue
+                        if msg.get('tool_call') != 'tool':
+                            has_non_tool_message = True
+                            messages.append(msg)
+                        elif has_non_tool_message:
+                            messages.append(msg)
+
+        messages.append({"content": message, "role": "user"})
+        interaction = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ]
+        }
+        tool_infos_collection = []
+        reply = ""
+        
+        while True:
+            response = await self.model_manager.chat_completion(
+                model=self.get_model("default"),
+                messages=messages,
+                tools=tools.get_tools(),
+            )
+            
+            assistant_message = response.choices[0].message  # type: ignore
+
+            if assistant_message.content or assistant_message.tool_calls:
+                messages.append(assistant_message)
+                interaction["messages"].append(assistant_message.model_dump(mode='json'))
+
+            if assistant_message.content:
+                reply += f'{assistant_message.content}\n'
+
+            if not assistant_message.tool_calls:
+                break
+            
+            for tool_call in assistant_message.tool_calls:
+                tool_info = ToolInfo(
+                    name=tool_call.function.name or "",
+                    description=tool_call.function.arguments
+                )
+                tool_infos_collection.append(tool_info)
+                
+                args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
+                if tool_call.function.name == "search_tools":
+                    reply += f"Searching tools: {args.get('query')}...\n"
+                elif tool_call.function.name == "call_tool":
+                    reply += f"Calling tool: {args.get('action')}...\n"
+
+            results = await tools.call_tools(assistant_message.tool_calls)  # type: ignore
+
+            if not results:
+                break
+
+            messages.extend(results)
+            interaction["messages"].extend(results)
+
+        return (
+            reply.rstrip('\n') if reply else "Sorry, something went wrong.",
+            tool_infos_collection,
+            messages,
+            interaction["messages"]
+        )
+
+    async def process_message_with_memory(
+        self,
+        message: str,
+        user_id: str,
+        chat_id: str,
+        history_count: int = 10,
+    ) -> str:
+        if chat_id not in self._chat_locks:
+            self._chat_locks[chat_id] = asyncio.Lock()
+        
+        async with self._chat_locks[chat_id]:
+            memory_manager = self.get_memory_manager(user_id, chat_id)
+            
+            reply, tool_infos, messages, interaction_content = await self.get_reply(
+                message, 
+                user_id, 
+                chat_id, 
+                history_count=history_count
+            )
+            
+            user_uuid = self.generate_uuid_from_id(str(user_id))
+            
+            fact_result = await self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply}")
+            goal_result = await self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply}")
+            
+            base_metadata = {
+                "chat_id": str(chat_id),
+                "user_id": str(user_id), 
+                "timestamp": str(datetime.now().isoformat()),
+                "has_tools": bool(tool_infos),
+                "is_private": chat_id == user_id,
+            }
+            
+            if fact_result.success and fact_result.data and fact_result.data.get('claims'):
+                metadata = base_metadata.copy()
+                metadata.update({
+                    "type": "fact",
+                    "claims_count": len(fact_result.data['claims'])
+                })
+                if tool_infos:
+                    metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+
+                fact_memory = Memory(
+                    id=uuid.uuid4(),
+                    user_id=user_uuid,
+                    agent_id=self._agent_id,
+                    content={
+                        "text": "Extracted facts from conversation",
+                        "claims": fact_result.data['claims']
+                    },
+                    memory_type=MemoryType.FACT,
+                    metadata=metadata,
+                    role=MemoryRole.SYSTEM,
+                    tools=tool_infos if tool_infos else [],
+                    unique=True
+                )
+                await memory_manager.create_memory(fact_memory)
+                
+            if goal_result.success and goal_result.data and goal_result.data.get('goals'):
+                metadata = base_metadata.copy()
+                metadata.update({
+                    "type": "goal",
+                    "goals_count": len(goal_result.data['goals'])
+                })
+                if tool_infos:
+                    metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+
+                goal_memory = Memory(
+                    id=uuid.uuid4(),
+                    user_id=user_uuid,
+                    agent_id=self._agent_id,
+                    content={
+                        "text": "Goals and progress tracking",
+                        "goals": goal_result.data['goals']
+                    },
+                    memory_type=MemoryType.GOAL,
+                    metadata=metadata,
+                    role=MemoryRole.SYSTEM,
+                    tools=tool_infos if tool_infos else [],
+                    unique=True
+                )
+                await memory_manager.create_memory(goal_memory)
+                
+            metadata = base_metadata.copy()
+            metadata.update({
+                "type": "interaction",
+                "message_length": len(message)
+            })
+            if tool_infos:
+                metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+            interaction_memory = Memory(
+                id=uuid.uuid4(),
+                user_id=user_uuid,
+                agent_id=self._agent_id,
+                content={
+                    "text": f"User: {message}\nAssistant: {reply}",
+                    "interaction": {
+                        "messages": interaction_content
+                    }
+                },
+                memory_type=MemoryType.INTERACTION,
+                metadata=metadata,
+                role=MemoryRole.SYSTEM,
+                tools=tool_infos if tool_infos else [],
+                unique=False
+            )
+            await memory_manager.create_memory(interaction_memory)
+            
+            return reply

@@ -11,7 +11,7 @@ import mcp.server.stdio
 
 from ..tools import Tools, function_list
 
-API_KEY = os.getenv("UNIFAI_AGENT_API_KEY")
+API_KEY = os.getenv("UNIFAI_AGENT_API_KEY", "")
 RAISE_EXCEPTIONS = os.getenv("RAISE_EXCEPTIONS", "true").lower() in ("true", "1")
 
 SERVER_NAME = "unifai-tools"
