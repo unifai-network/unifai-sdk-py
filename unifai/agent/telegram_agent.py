@@ -113,7 +113,7 @@ class TelegramAgent(unifai.Agent):
         """Generate a consistent agent ID."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"telegram-bot-{self.bot_name}")
 
-    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 20) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
+    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
         memory_manager = self.get_memory_manager(user_id, chat_id)
         tools = unifai.Tools(api_key=self.api_key)
 
@@ -133,25 +133,6 @@ class TelegramAgent(unifai.Agent):
         messages = []
         system_prompt = self.get_prompt("agent.system") 
         messages.append({"content": system_prompt, "role": "system"})
-        
-        if recent_memories:
-            recent_interactions = sorted(
-                recent_memories,
-                key=lambda x: x.metadata.get("timestamp", ""),
-                reverse=True
-            )[:history_count]
-
-            recent_interactions = list(reversed(recent_interactions))
-
-            for mem in recent_interactions:
-                if mem.content.get('interaction', {}).get('messages'):
-                    has_non_tool_message = False
-                    for msg in mem.content['interaction']['messages']:
-                        if msg.get('tool_call') != 'tool':
-                            has_non_tool_message = True
-                            messages.append(msg)
-                        elif has_non_tool_message:
-                            messages.append(msg)
 
         if relevant_memories:
             facts = []
@@ -173,6 +154,25 @@ class TelegramAgent(unifai.Agent):
                     "role": "system",
                     "content": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
                 })
+
+        if recent_memories:
+            recent_interactions = sorted(
+                recent_memories,
+                key=lambda x: x.metadata.get("timestamp", ""),
+                reverse=True
+            )[:history_count]
+
+            recent_interactions = list(reversed(recent_interactions))
+
+            for mem in recent_interactions:
+                if mem.content.get('interaction', {}).get('messages'):
+                    has_non_tool_message = False
+                    for msg in mem.content['interaction']['messages']:
+                        if msg.get('tool_call') != 'tool':
+                            has_non_tool_message = True
+                            messages.append(msg)
+                        elif has_non_tool_message:
+                            messages.append(msg)
 
         messages.append({"content": message, "role": "user"})
         interaction = {
@@ -272,7 +272,7 @@ class TelegramAgent(unifai.Agent):
         message: str,
         user_id: str,
         chat_id: str,
-        history_count: int = 20,
+        history_count: int = 10,
     ) -> str:
         if chat_id not in self._chat_locks:
             self._chat_locks[chat_id] = asyncio.Lock()
