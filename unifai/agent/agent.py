@@ -309,9 +309,28 @@ class Agent:
         memory_manager = self.get_memory_manager(user_id, chat_id)
         tools = Tools(api_key=self.api_key)
 
-        recent_memories = await memory_manager.get_recent_memories(
-            count=history_count,
+        response = await self.model_manager.chat_completion(
+            model=self.get_model("history"),
+            messages=[
+                {"role": "system", "content": self.get_prompt("agent.history")},
+                {"role": "user", "content": message}
+            ],
         )
+        use_history = False
+        try:
+            logger.info(f"History response: {response.choices[0].message.content}")  # type: ignore
+            history_score = int(response.choices[0].message.content)  # type: ignore
+            use_history = history_score > 50
+        except Exception as e:
+            logger.error(f"Error determining whether to use history: {e}")
+
+        logger.info(f"Use history: {use_history}")
+
+        recent_memories = []
+        if use_history:
+            recent_memories = await memory_manager.get_recent_memories(
+                count=history_count,
+            )
 
         relevant_memories = await memory_manager.get_memories(
             content=message,
