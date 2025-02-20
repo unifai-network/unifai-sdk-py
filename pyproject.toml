@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "unifai-sdk"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
-  { name="Unifai", email="contact@unifai.network" },
+  { name="UnifAI", email="contact@unifai.network" },
 ]
-description = "Unifai Python SDK"
+description = "UnifAI Python SDK"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [

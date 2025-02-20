@@ -14,7 +14,7 @@ system: |
   - Proceed with the tool execution
   
   Important rules:
-  - Actions returned by search_tools must ONLY be used in call_tool function as payload, they are NOT functions that can be called directly.
+  - Actions returned by search_services must ONLY be used in invoke_service function as payload, they are NOT functions that can be called directly.
   - Keep responses in plain text and avoid markdown to be compatible with Telegram format
 
 history: |

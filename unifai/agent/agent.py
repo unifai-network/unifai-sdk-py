@@ -30,6 +30,7 @@ from ..memory import (
 )
 from ..reflector import FactReflector, GoalReflector
 from ..tools import Tools
+from ..tools.tools import FunctionName
 
 logger = logging.getLogger(__name__)
 
@@ -432,10 +433,10 @@ class Agent:
                 tool_infos_collection.append(tool_info)
                 
                 args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
-                if tool_call.function.name == "search_tools":
-                    reply += f"Searching tools: {args.get('query')}...\n"
-                elif tool_call.function.name == "call_tool":
-                    reply += f"Calling tool: {args.get('action')}...\n"
+                if tool_call.function.name == FunctionName.SEARCH_TOOLS.value:
+                    reply += f"Searching services: {args.get('query')}...\n"
+                elif tool_call.function.name == FunctionName.CALL_TOOL.value:
+                    reply += f"Invoking service: {args.get('action')}...\n"
 
             results = await tools.call_tools(assistant_message.tool_calls)  # type: ignore
 

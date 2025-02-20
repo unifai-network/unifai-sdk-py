@@ -33,13 +33,13 @@ class OpenAIToolResult(BaseModel):
     content: str
 
 class FunctionName(Enum):
-    SEARCH_TOOLS = "search_tools"
-    CALL_TOOL = "call_tool"
+    SEARCH_TOOLS = "search_services"
+    CALL_TOOL = "invoke_service"
 
 function_list: List[Function] = [
     Function(
         name=FunctionName.SEARCH_TOOLS.value,
-        description="Search for tools. The tools cover a wide range of domains include data source, API, SDK, etc. Try searching whenever you need to use a tool. Returned actions should ONLY be used in call_tool.",
+        description=f"Search for tools. The tools cover a wide range of domains include data source, API, SDK, etc. Try searching whenever you need to use a tool. Returned actions should ONLY be used in {FunctionName.CALL_TOOL.value}.",
         parameters={
             "type": "object",
             "properties": {
@@ -57,17 +57,17 @@ function_list: List[Function] = [
     ),
     Function(
         name=FunctionName.CALL_TOOL.value,
-        description="Call a tool returned by search_tools",
+        description=f"Call a tool returned by {FunctionName.SEARCH_TOOLS.value}",
         parameters={
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "The exact action you want to call in the search_tools result."
+                    "description": f"The exact action you want to call in the {FunctionName.SEARCH_TOOLS.value} result."
                 },
                 "payload": {
                     "type": "string",
-                    "description": "Action payload, based on the payload schema in the search_tools result. You can pass either the json object directly or json encoded string of the object.",
+                    "description": f"Action payload, based on the payload schema in the {FunctionName.SEARCH_TOOLS.value} result. You can pass either the json object directly or json encoded string of the object.",
                 },
                 "payment": {
                     "type": "number",
@@ -126,8 +126,7 @@ class Tools:
         elif name == FunctionName.CALL_TOOL.value:
             return await self._api.call_tool(args)
         else:
-            logger.warning(f"Unknown tool name: {name}")
-            return None
+            raise ValueError(f"Unknown tool name: {name}")
 
     async def _sem_call_tool(self, name: str, arguments: dict | str, tool_call_id: str, semaphore: asyncio.Semaphore) -> Optional[OpenAIToolResult]:
         async with semaphore:
