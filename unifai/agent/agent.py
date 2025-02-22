@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import uuid
+from typing import Dict, List, Optional
 
 from telegram import LinkPreviewOptions, Update
 from telegram.ext import (
@@ -15,6 +16,8 @@ from telegram.ext import (
     filters,
     MessageHandler,
 )
+from dotenv import load_dotenv
+load_dotenv()
 
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts
@@ -31,11 +34,12 @@ from ..memory import (
 from ..reflector import FactReflector, GoalReflector
 from ..tools import Tools
 from ..tools.tools import FunctionName
+from ..client.base import BaseClient, MessageContext
 
 logger = logging.getLogger(__name__)
 
 class Agent:
-    def __init__(self, api_key):
+    def __init__(self, api_key: str, clients: Optional[List[BaseClient]] = None):
         self.api_key = api_key
         self._prompts = {}
         self._models = {
@@ -45,13 +49,20 @@ class Agent:
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self._stop_event = asyncio.Event()
         self._tasks = []
-
+        
+        self._channel_locks: Dict[str, asyncio.Lock] = {}
+        
         self.fact_reflector = FactReflector(litellm.acompletion)
         self.goal_reflector = GoalReflector(litellm.acompletion)
         self._setup_memory_manager()
         self._setup_telegram()
         self._agent_id = self.generate_agent_id()
         self._chat_locks = {}
+
+        self._clients = {}
+        if clients:
+            for client in clients:
+                self.add_client(client)
 
     def set_ws_endpoint(self, endpoint):
         self.ws_uri = f"{endpoint}?type=player&api-key={self.api_key}"
@@ -182,63 +193,39 @@ class Agent:
             loop.close()
 
     async def start(self):
-        """
-        Asynchronous entry point to run the agent.
-        """
-        self._tasks = [
-            asyncio.create_task(self._start_telegram()),
-        ]
+        logger.info("Starting agent...")
+        for client in self._clients.values():
+            try:
+                await client.start()
+                self._tasks.append(
+                    asyncio.create_task(
+                        self._handle_client_messages(client)
+                    )
+                )
+                logger.info(f"Started client: {client.client_id}")
+            except Exception as e:
+                logger.error(f"Failed to start client {client.client_id}: {e}")
+
         await self._stop_event.wait()
-        for task in self._tasks:
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        logger.info("Agent has been stopped.")
+        await self.stop()
 
     async def stop(self):
-        """
-        Stop the agent.
-        """
-        logger.info("Stopping the agent...")
+        """Stop the agent and all clients"""
+        logger.info("Stopping agent...")
         self._stop_event.set()
-        if hasattr(self, '_tasks'):
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-
-    async def _start_telegram(self):
-        while not self._stop_event.is_set():
+        
+        for client in self._clients.values():
             try:
-                started = False
-                application = ApplicationBuilder().token(self.bot_token).build()
-
-                if not application.updater:
-                    raise RuntimeError("Updater is not initialized")
-                
-                filter_conditions = (
-                    (filters.CaptionRegex(f"@{self.bot_name}") & (~filters.COMMAND)) |
-                    (filters.Mention(self.bot_name) & (~filters.COMMAND)) |
-                    (filters.ChatType.PRIVATE & (~filters.COMMAND))
-                )
-                application.add_handler(MessageHandler(
-                    filter_conditions,
-                    self.handle_message,
-                    block=False
-                ))
-
-                await application.initialize()
-                await application.start()
-                await application.updater.start_polling()
-                started = True
-                await self._stop_event.wait()
-            except asyncio.CancelledError:
-                logger.info("Telegram task cancelled.")
-                break
+                await client.stop()
+                logger.info(f"Stopped client: {client.client_id}")
             except Exception as e:
-                logger.error(f"Error: {e}. Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
-            finally:
-                if started and application.updater:
-                    await application.updater.stop()
-                    await application.stop()
-                    await application.shutdown()
+                logger.error(f"Error stopping client {client.client_id}: {e}")
+
+        for task in self._tasks:
+            task.cancel()
+        
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        logger.info("Agent stopped")
 
     def _setup_memory_manager(self):
         self.memory_config = ChromaConfig(
@@ -304,8 +291,8 @@ class Agent:
         return uuid.uuid5(uuid.NAMESPACE_DNS, str(id_str))
 
     def generate_agent_id(self) -> uuid.UUID:
-        """Generate a consistent agent ID."""
-        return uuid.uuid5(uuid.NAMESPACE_DNS, f"telegram-bot-{self.bot_name}")
+        """Generate a consistent agent ID"""
+        return uuid.uuid5(uuid.NAMESPACE_DNS, "unifai-agent")
 
     async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
         memory_manager = self.get_memory_manager(user_id, chat_id)
@@ -562,3 +549,54 @@ class Agent:
             await memory_manager.create_memory(interaction_memory)
             
             return reply
+
+    def add_client(self, client: BaseClient) -> None:
+        """Add a new client to the agent"""
+        self._clients[client.client_id] = client
+
+    def remove_client(self, client_id: str) -> None:
+        """Remove a client from the agent"""
+        if client_id in self._clients:
+            del self._clients[client_id]
+
+    async def _handle_client_messages(self, client: BaseClient) -> None:
+        """Handle messages from a specific client with parallel processing between channels"""
+        while not self._stop_event.is_set():
+            try:
+                ctx = await client.receive_message()
+                if ctx:
+                    self._tasks.append(
+                        asyncio.create_task(
+                            self._process_channel_message(client, ctx)
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Error handling message from {client.client_id}: {e}")
+                await asyncio.sleep(1)
+
+    async def _process_channel_message(self, client: BaseClient, ctx: MessageContext) -> None:
+        """Process message within a channel serially"""
+        channel_lock = self.get_channel_lock(client.client_id, ctx.chat_id)
+        
+        async with channel_lock:
+            try:
+                reply = await self.process_message_with_memory(
+                    ctx.message,
+                    ctx.user_id,
+                    ctx.chat_id
+                )
+                
+                await client.send_message(ctx, reply)
+            except Exception as e:
+                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
+
+    def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
+        """Get or create a lock for a specific channel"""
+        channel_key = f"{client_id}:{chat_id}"
+        if channel_key not in self._channel_locks:
+            self._channel_locks[channel_key] = asyncio.Lock()
+        return self._channel_locks[channel_key]
+
+    def get_collection_name(self, client_id: str, chat_id: str) -> str:
+        """Generate a unique collection name for memory storage"""
+        return f"{client_id}-{chat_id}"
