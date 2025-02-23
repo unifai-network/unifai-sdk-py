@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 from .model import ModelManager
-from .utils import load_prompt, load_all_prompts
+from .utils import load_prompt, load_all_prompts, generate_uuid_from_id, get_collection_name, ChannelLockManager, sanitize_collection_name
 from ..common.const import BACKEND_WS_ENDPOINT
 from ..memory import (
     ChromaConfig,
@@ -60,6 +60,8 @@ class Agent:
         if clients:
             for client in clients:
                 self.add_client(client)
+
+        self._channel_lock_manager = ChannelLockManager()
 
     def set_ws_endpoint(self, endpoint):
         self.ws_uri = f"{endpoint}?type=player&api-key={self.api_key}"
@@ -239,18 +241,8 @@ class Agent:
     def get_memory_manager(self, user_id: str, chat_id: str) -> ChromaMemoryManager:
         chat_id = chat_id or user_id
         
-        def sanitize_id(id_str: str) -> str:
-            sanitized = ''.join(c if c.isalnum() else '-' for c in id_str)
-            if not sanitized[0].isalpha():
-                sanitized = 'id-' + sanitized
-            if len(sanitized) < 3:
-                sanitized = sanitized + '-collection'
-            elif len(sanitized) > 63:
-                sanitized = sanitized[:60] + '-col'
-            return sanitized
-
         collection_base = f"{self._agent_id}-{user_id}-{chat_id}"
-        collection_name = sanitize_id(collection_base)
+        collection_name = sanitize_collection_name(collection_base)
         
         config = ChromaConfig(
             storage_type=self.memory_config.storage_type,
@@ -283,9 +275,8 @@ class Agent:
                 link_preview_options=LinkPreviewOptions(is_disabled=True)
             )
 
-    def generate_uuid_from_id(self, id_str: str) -> uuid.UUID:
-        """Generate a UUID from a string identifier."""
-        return uuid.uuid5(uuid.NAMESPACE_DNS, str(id_str))
+    def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
+        return self._channel_lock_manager.get_lock(client_id, chat_id)
 
     async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
         memory_manager = self.get_memory_manager(user_id, chat_id)
@@ -449,7 +440,7 @@ class Agent:
             history_count=history_count
         )
         
-        user_uuid = self.generate_uuid_from_id(str(user_id))
+        user_uuid = generate_uuid_from_id(str(user_id))
         
         base_metadata = {
             "chat_id": str(chat_id),
@@ -573,24 +564,20 @@ class Agent:
 
     async def _process_channel_message(self, client: BaseClient, ctx: MessageContext) -> None:
         """Process message within a channel"""
-        try:
-            reply = await self.process_message_with_memory(
-                ctx.message,
-                ctx.user_id,
-                ctx.chat_id
-            )
-            
-            await client.send_message(ctx, reply)
-        except Exception as e:
-            logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
-
-    def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
-        """Get or create a lock for a specific channel"""
-        channel_key = f"{client_id}:{chat_id}"
-        if channel_key not in self._channel_locks:
-            self._channel_locks[channel_key] = asyncio.Lock()
-        return self._channel_locks[channel_key]
+        channel_lock = self.get_channel_lock(client.client_id, ctx.chat_id)
+        
+        async with channel_lock:
+            try:
+                reply = await self.process_message_with_memory(
+                    ctx.message,
+                    ctx.user_id,
+                    ctx.chat_id
+                )
+                
+                await client.send_message(ctx, reply)
+            except Exception as e:
+                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
 
     def get_collection_name(self, client_id: str, chat_id: str) -> str:
         """Generate a unique collection name for memory storage"""
-        return f"{client_id}-{chat_id}"
+        return get_collection_name(self._agent_id, client_id, chat_id)
