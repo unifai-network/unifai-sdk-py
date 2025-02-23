@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 from functools import wraps
 import asyncio
@@ -15,12 +14,30 @@ def ensure_started(func):
         return await func(self, *args, **kwargs)
     return wrapper
 
-@dataclass
-class MessageContext:
-    chat_id: str
-    user_id: str
-    message: str
-    extra: Dict[str, Any] = field(default_factory=dict)
+class MessageContext(ABC):
+    @property
+    @abstractmethod
+    def chat_id(self) -> str:
+        """Get chat ID"""
+        pass
+        
+    @property
+    @abstractmethod
+    def user_id(self) -> str:
+        """Get user ID"""
+        pass
+        
+    @property
+    @abstractmethod
+    def message(self) -> str:
+        """Get message content"""
+        pass
+        
+    @property
+    @abstractmethod
+    def extra(self) -> Dict[str, Any]:
+        """Get extra data"""
+        pass
 
 class BaseClient(ABC):
     def __init__(self, client_id: str):
@@ -34,46 +51,23 @@ class BaseClient(ABC):
         return self._client_id
 
     @abstractmethod
-    async def _connect(self):
-        """Internal connection logic"""
-        pass
-
-    @abstractmethod
-    async def _disconnect(self):
-        """Internal disconnection logic"""
-        pass
-
-    @abstractmethod
-    async def _send_message_impl(self, ctx: MessageContext, reply: str):
-        """Implementation of sending message"""
-        pass
-
     async def start(self):
         """Start the client"""
-        if self._started:
-            return
-        await self._connect()
-        self._started = True
-        self._stop_event.clear()
+        pass
 
+    @abstractmethod
     async def stop(self):
         """Stop the client"""
-        if not self._started:
-            return
-        self._stop_event.set()
-        await self._disconnect()
-        self._started = False
+        pass
 
+    @abstractmethod
     @ensure_started
     async def receive_message(self) -> Optional[MessageContext]:
         """Receive a message from the queue"""
-        try:
-            return await self._message_queue.get()
-        except Exception as e:
-            logger.error(f"Error receiving message: {e}")
-            return None
+        pass
 
+    @abstractmethod
     @ensure_started
     async def send_message(self, ctx: MessageContext, reply: str):
         """Send a message using the context"""
-        await self._send_message_impl(ctx, reply) 
+        pass

@@ -16,8 +16,6 @@ from telegram.ext import (
     filters,
     MessageHandler,
 )
-from dotenv import load_dotenv
-load_dotenv()
 
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts
@@ -39,8 +37,9 @@ from ..client.base import BaseClient, MessageContext
 logger = logging.getLogger(__name__)
 
 class Agent:
-    def __init__(self, api_key: str, clients: Optional[List[BaseClient]] = None):
+    def __init__(self, api_key: str, agent_id: str, clients: Optional[List[BaseClient]] = None):
         self.api_key = api_key
+        self._agent_id = agent_id
         self._prompts = {}
         self._models = {
             'default': 'gpt-4o',
@@ -56,8 +55,6 @@ class Agent:
         self.goal_reflector = GoalReflector(litellm.acompletion)
         self._setup_memory_manager()
         self._setup_telegram()
-        self._agent_id = self.generate_agent_id()
-        self._chat_locks = {}
 
         self._clients = {}
         if clients:
@@ -207,25 +204,24 @@ class Agent:
                 logger.error(f"Failed to start client {client.client_id}: {e}")
 
         await self._stop_event.wait()
-        await self.stop()
-
-    async def stop(self):
-        """Stop the agent and all clients"""
-        logger.info("Stopping agent...")
-        self._stop_event.set()
+        
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
         
         for client in self._clients.values():
             try:
                 await client.stop()
                 logger.info(f"Stopped client: {client.client_id}")
             except Exception as e:
-                logger.error(f"Error stopping client {client.client_id}: {e}")
-
-        for task in self._tasks:
-            task.cancel()
+                logger.error(f"Failed to stop client {client.client_id}: {e}")
         
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        logger.info("Agent stopped")
+        logger.info("Agent has been stopped.")
+
+    async def stop(self):
+        """Stop the agent"""
+        logger.info("Stopping the agent...")
+        self._stop_event.set()
 
     def _setup_memory_manager(self):
         self.memory_config = ChromaConfig(
@@ -253,7 +249,8 @@ class Agent:
                 sanitized = sanitized[:60] + '-col'
             return sanitized
 
-        collection_name = sanitize_id(chat_id)
+        collection_base = f"{self._agent_id}-{user_id}-{chat_id}"
+        collection_name = sanitize_id(collection_base)
         
         config = ChromaConfig(
             storage_type=self.memory_config.storage_type,
@@ -289,10 +286,6 @@ class Agent:
     def generate_uuid_from_id(self, id_str: str) -> uuid.UUID:
         """Generate a UUID from a string identifier."""
         return uuid.uuid5(uuid.NAMESPACE_DNS, str(id_str))
-
-    def generate_agent_id(self) -> uuid.UUID:
-        """Generate a consistent agent ID"""
-        return uuid.uuid5(uuid.NAMESPACE_DNS, "unifai-agent")
 
     async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
         memory_manager = self.get_memory_manager(user_id, chat_id)
@@ -447,108 +440,113 @@ class Agent:
         chat_id: str,
         history_count: int = 10,
     ) -> str:
-        if chat_id not in self._chat_locks:
-            self._chat_locks[chat_id] = asyncio.Lock()
+        memory_manager = self.get_memory_manager(user_id, chat_id)
         
-        async with self._chat_locks[chat_id]:
-            memory_manager = self.get_memory_manager(user_id, chat_id)
-            
-            reply, tool_infos, messages, interaction_content = await self.get_reply(
-                message, 
-                user_id, 
-                chat_id, 
-                history_count=history_count
-            )
-            
-            user_uuid = self.generate_uuid_from_id(str(user_id))
-            
-            fact_result = await self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply}")
-            goal_result = await self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply}")
-            
-            base_metadata = {
-                "chat_id": str(chat_id),
-                "user_id": str(user_id), 
-                "timestamp": str(datetime.now().isoformat()),
-                "has_tools": bool(tool_infos),
-                "is_private": chat_id == user_id,
-            }
-            
-            if fact_result.success and fact_result.data and fact_result.data.get('claims'):
-                metadata = base_metadata.copy()
-                metadata.update({
-                    "type": "fact",
-                    "claims_count": len(fact_result.data['claims'])
-                })
-                if tool_infos:
-                    metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+        reply, tool_infos, messages, interaction_content = await self.get_reply(
+            message, 
+            user_id, 
+            chat_id, 
+            history_count=history_count
+        )
+        
+        user_uuid = self.generate_uuid_from_id(str(user_id))
+        
+        base_metadata = {
+            "chat_id": str(chat_id),
+            "user_id": str(user_id), 
+            "timestamp": str(datetime.now().isoformat()),
+            "has_tools": bool(tool_infos),
+            "is_private": chat_id == user_id,
+        }
 
-                fact_memory = Memory(
-                    id=uuid.uuid4(),
-                    user_id=user_uuid,
-                    agent_id=self._agent_id,
-                    content={
-                        "text": "Extracted facts from conversation",
-                        "claims": fact_result.data['claims']
-                    },
-                    memory_type=MemoryType.FACT,
-                    metadata=metadata,
-                    role=MemoryRole.SYSTEM,
-                    tools=tool_infos if tool_infos else [],
-                    unique=True
-                )
-                await memory_manager.create_memory(fact_memory)
-                
-            if goal_result.success and goal_result.data and goal_result.data.get('goals'):
-                metadata = base_metadata.copy()
-                metadata.update({
-                    "type": "goal",
-                    "goals_count": len(goal_result.data['goals'])
-                })
-                if tool_infos:
-                    metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+        tasks = [
+            self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply}"),
+            self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply}")
+        ]
 
-                goal_memory = Memory(
-                    id=uuid.uuid4(),
-                    user_id=user_uuid,
-                    agent_id=self._agent_id,
-                    content={
-                        "text": "Goals and progress tracking",
-                        "goals": goal_result.data['goals']
-                    },
-                    memory_type=MemoryType.GOAL,
-                    metadata=metadata,
-                    role=MemoryRole.SYSTEM,
-                    tools=tool_infos if tool_infos else [],
-                    unique=True
-                )
-                await memory_manager.create_memory(goal_memory)
-                
+        fact_result, goal_result = await asyncio.gather(*tasks)
+        
+        memory_tasks = []
+
+        if fact_result.success and fact_result.data and fact_result.data.get('claims'):
             metadata = base_metadata.copy()
             metadata.update({
-                "type": "interaction",
-                "message_length": len(message)
+                "type": "fact",
+                "claims_count": len(fact_result.data['claims'])
             })
             if tool_infos:
                 metadata["tool_names"] = ",".join(t.name for t in tool_infos)
-            interaction_memory = Memory(
+
+            fact_memory = Memory(
                 id=uuid.uuid4(),
                 user_id=user_uuid,
                 agent_id=self._agent_id,
                 content={
-                    "text": f"User: {message}\nAssistant: {reply}",
-                    "interaction": {
-                        "messages": interaction_content
-                    }
+                    "text": "Extracted facts from conversation",
+                    "claims": fact_result.data['claims']
                 },
-                memory_type=MemoryType.INTERACTION,
+                memory_type=MemoryType.FACT,
                 metadata=metadata,
                 role=MemoryRole.SYSTEM,
                 tools=tool_infos if tool_infos else [],
-                unique=False
+                unique=True
             )
-            await memory_manager.create_memory(interaction_memory)
+            memory_tasks.append(memory_manager.create_memory(fact_memory))
+
+        if goal_result.success and goal_result.data and goal_result.data.get('goals'):
+            metadata = base_metadata.copy()
+            metadata.update({
+                "type": "goal",
+                "goals_count": len(goal_result.data['goals'])
+            })
+            if tool_infos:
+                metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+
+            goal_memory = Memory(
+                id=uuid.uuid4(),
+                user_id=user_uuid,
+                agent_id=self._agent_id,
+                content={
+                    "text": "Goals and progress tracking",
+                    "goals": goal_result.data['goals']
+                },
+                memory_type=MemoryType.GOAL,
+                metadata=metadata,
+                role=MemoryRole.SYSTEM,
+                tools=tool_infos if tool_infos else [],
+                unique=True
+            )
+            memory_tasks.append(memory_manager.create_memory(goal_memory))
             
-            return reply
+        metadata = base_metadata.copy()
+        metadata.update({
+            "type": "interaction",
+            "message_length": len(message)
+        })
+        if tool_infos:
+            metadata["tool_names"] = ",".join(t.name for t in tool_infos)
+        interaction_memory = Memory(
+            id=uuid.uuid4(),
+            user_id=user_uuid,
+            agent_id=self._agent_id,
+            content={
+                "text": f"User: {message}\nAssistant: {reply}",
+                "interaction": {
+                    "messages": interaction_content
+                }
+            },
+            memory_type=MemoryType.INTERACTION,
+            metadata=metadata,
+            role=MemoryRole.SYSTEM,
+            tools=tool_infos if tool_infos else [],
+            unique=False
+        )
+        memory_tasks.append(memory_manager.create_memory(interaction_memory))
+        
+        if memory_tasks:
+            await asyncio.gather(*memory_tasks)
+        
+        return reply
 
     def add_client(self, client: BaseClient) -> None:
         """Add a new client to the agent"""
@@ -572,23 +570,19 @@ class Agent:
                     )
             except Exception as e:
                 logger.error(f"Error handling message from {client.client_id}: {e}")
-                await asyncio.sleep(1)
 
     async def _process_channel_message(self, client: BaseClient, ctx: MessageContext) -> None:
-        """Process message within a channel serially"""
-        channel_lock = self.get_channel_lock(client.client_id, ctx.chat_id)
-        
-        async with channel_lock:
-            try:
-                reply = await self.process_message_with_memory(
-                    ctx.message,
-                    ctx.user_id,
-                    ctx.chat_id
-                )
-                
-                await client.send_message(ctx, reply)
-            except Exception as e:
-                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
+        """Process message within a channel"""
+        try:
+            reply = await self.process_message_with_memory(
+                ctx.message,
+                ctx.user_id,
+                ctx.chat_id
+            )
+            
+            await client.send_message(ctx, reply)
+        except Exception as e:
+            logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
 
     def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific channel"""
