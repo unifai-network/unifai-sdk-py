@@ -49,3 +49,7 @@ coverage.xml
 *.log
 local/
 data/
+
+# Chroma DB
+chroma_db/
+chroma_data/

@@ -1,10 +1,20 @@
-from telegram import Update, Bot, LinkPreviewOptions
-from telegram.ext import ApplicationBuilder, ContextTypes, filters, MessageHandler
+import asyncio
 import logging
+from telegram import Update, LinkPreviewOptions
+from telegram.ext import ApplicationBuilder, ContextTypes, filters, MessageHandler
 from typing import Dict, Any, Optional
-from .base import BaseClient, MessageContext, ensure_started
+from functools import wraps
+from .base import BaseClient, MessageContext
 
 logger = logging.getLogger(__name__)
+
+def ensure_started(func):
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        if not self._started:
+            raise RuntimeError(f"Client {self.client_id} not started")
+        return await func(self, *args, **kwargs)
+    return wrapper
 
 class TelegramMessageContext(MessageContext):
     def __init__(self, chat_id: str, user_id: str, message: str, extra: Dict[str, Any]):
@@ -31,10 +41,16 @@ class TelegramMessageContext(MessageContext):
 
 class TelegramClient(BaseClient):
     def __init__(self, bot_token: str, bot_name: str):
-        super().__init__(client_id=f"telegram-{bot_name}")
         self.bot_token = bot_token
         self.bot_name = bot_name
         self._application = None
+        self._started = False
+        self._message_queue = asyncio.Queue()
+        self._stop_event = asyncio.Event()
+
+    @property
+    def client_id(self) -> str:
+        return f"telegram-{self.bot_name}"
 
     async def start(self):
         """Start the client"""
@@ -55,7 +71,6 @@ class TelegramClient(BaseClient):
         self._application.add_handler(MessageHandler(
             filter_conditions,
             self._handle_telegram_update,
-            block=False
         ))
 
         await self._application.initialize()

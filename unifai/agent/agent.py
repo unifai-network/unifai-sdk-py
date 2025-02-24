@@ -4,18 +4,9 @@ import asyncio
 import json
 import litellm
 import logging
-import os
 import re
 import uuid
-from typing import Dict, List, Optional
-
-from telegram import LinkPreviewOptions, Update
-from telegram.ext import (
-    ApplicationBuilder,
-    ContextTypes,
-    filters,
-    MessageHandler,
-)
+from typing import Dict, List
 
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts, generate_uuid_from_id, get_collection_name, ChannelLockManager, sanitize_collection_name
@@ -37,15 +28,35 @@ from ..client.base import BaseClient, MessageContext
 logger = logging.getLogger(__name__)
 
 class Agent:
-    def __init__(self, api_key: str, agent_id: str, clients: Optional[List[BaseClient]] = None):
+    def __init__(
+        self,
+        api_key: str,
+        agent_id: str = "",
+        clients: List[BaseClient] = [],
+        chroma_config: ChromaConfig = ChromaConfig(
+            storage_type=StorageType.PERSISTENT,
+            persist_directory="./chroma_db",
+        ),
+    ):
+        """Initialize an Agent instance.
+
+        Args:
+            api_key (str): UnifAI agent API key
+            agent_id (str, optional): Unique identifier for the agent. Different agent_ids will use 
+                separate memory collections in the database, allowing multiple agents to maintain 
+                independent conversation histories and memories using the same database.
+            clients (List[BaseClient], optional): List of clients to handle different 
+                communication channels (e.g., Telegram)
+            chroma_config (ChromaConfig, optional): Configuration for the Chroma database.
+        """
         self.api_key = api_key
         self._agent_id = agent_id
         self._prompts = {}
         self._models = {
             'default': 'gpt-4o',
         }
-        self.model_manager = ModelManager()
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
+        self.model_manager = ModelManager()
         self._stop_event = asyncio.Event()
         self._tasks = []
         
@@ -53,8 +64,8 @@ class Agent:
         
         self.fact_reflector = FactReflector(litellm.acompletion)
         self.goal_reflector = GoalReflector(litellm.acompletion)
-        self._setup_memory_manager()
-        self._setup_telegram()
+
+        self.memory_config = chroma_config
 
         self._clients = {}
         if clients:
@@ -225,19 +236,6 @@ class Agent:
         logger.info("Stopping the agent...")
         self._stop_event.set()
 
-    def _setup_memory_manager(self):
-        self.memory_config = ChromaConfig(
-            storage_type=StorageType.HTTP,
-            host=os.getenv("CHROMA_HOST", "localhost"),
-            port=int(os.getenv("CHROMA_PORT", "8000")),
-        )
-    
-    def _setup_telegram(self):
-        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN', "")
-        self.bot_name = os.getenv('TELEGRAM_BOT_NAME', "")
-        if not self.bot_token:
-            raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
-
     def get_memory_manager(self, user_id: str, chat_id: str) -> ChromaMemoryManager:
         chat_id = chat_id or user_id
         
@@ -251,29 +249,6 @@ class Agent:
             collection_name=collection_name
         )
         return ChromaMemoryManager(config)
-
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message or not update.message.from_user or not update.effective_chat:
-            return
-
-        user_message = update.message.text or update.message.caption
-        if not user_message:
-            return
-        reply = await self.process_message_with_memory(
-            user_message,
-            str(update.message.from_user.id),
-            str(update.effective_chat.id),
-        )
-
-        MAX_MESSAGE_LENGTH = 4000
-        messages = [reply[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(reply), MAX_MESSAGE_LENGTH)]
-        
-        for message in messages:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,  
-                text=message, 
-                link_preview_options=LinkPreviewOptions(is_disabled=True)
-            )
 
     def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
         return self._channel_lock_manager.get_lock(client_id, chat_id)
@@ -441,6 +416,7 @@ class Agent:
         )
         
         user_uuid = generate_uuid_from_id(str(user_id))
+        agent_uuid = generate_uuid_from_id(self._agent_id)
         
         base_metadata = {
             "chat_id": str(chat_id),
@@ -471,7 +447,7 @@ class Agent:
             fact_memory = Memory(
                 id=uuid.uuid4(),
                 user_id=user_uuid,
-                agent_id=self._agent_id,
+                agent_id=agent_uuid,
                 content={
                     "text": "Extracted facts from conversation",
                     "claims": fact_result.data['claims']
@@ -496,7 +472,7 @@ class Agent:
             goal_memory = Memory(
                 id=uuid.uuid4(),
                 user_id=user_uuid,
-                agent_id=self._agent_id,
+                agent_id=agent_uuid,
                 content={
                     "text": "Goals and progress tracking",
                     "goals": goal_result.data['goals']
@@ -519,7 +495,7 @@ class Agent:
         interaction_memory = Memory(
             id=uuid.uuid4(),
             user_id=user_uuid,
-            agent_id=self._agent_id,
+            agent_id=agent_uuid,
             content={
                 "text": f"User: {message}\nAssistant: {reply}",
                 "interaction": {
