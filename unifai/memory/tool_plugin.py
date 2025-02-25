@@ -1,5 +1,5 @@
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import List, Dict, Optional, Tuple, Set
+from datetime import datetime, timedelta
 from .plugin import MemoryRankPlugin, PluginContext, RankingResult
 from .base import Memory, ToolInfo
 
@@ -21,7 +21,7 @@ class ToolSimilarityPlugin(MemoryRankPlugin[ToolSimilarityConfig]):
     def __init__(self, weight: float = 0.3, config: Optional[ToolSimilarityConfig] = None):
         super().__init__(config or ToolSimilarityConfig())
         self.weight = weight
-        self._tool_sequence_cache = {}
+        self._tool_sequence_cache: Dict[str, Tuple[List[str], datetime]] = {}
     
     def _get_tool_sequence(self, memory: Memory) -> List[str]:
         """Extract ordered sequence of tool names from memory"""
@@ -54,13 +54,15 @@ class ToolSimilarityPlugin(MemoryRankPlugin[ToolSimilarityConfig]):
     ) -> Dict[str, float]:
         scores = {}
         
-        context_tools = set()
+        context_tools: Set[str] = set()
         context_sequence = []
         recent_memories = sorted(
             [m for m in memories if m.tools],
             key=lambda x: x.created_at,
             reverse=True
         )
+        if not self.config:
+            self.config = ToolSimilarityConfig()
         
         for memory in recent_memories:
             if memory.tools:
