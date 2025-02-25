@@ -51,7 +51,7 @@ def load_all_prompts():
 
 def generate_uuid_from_id(id_str: str) -> uuid.UUID:
     """Generate a UUID from a string identifier."""
-    return uuid.uuid5(uuid.NAMESPACE_DNS, str(id_str))
+    return uuid.uuid5(uuid.NAMESPACE_DNS, id_str)
 
 def get_collection_name(agent_id: str, client_id: str, chat_id: str) -> str:
     """Generate a unique collection name for memory storage"""

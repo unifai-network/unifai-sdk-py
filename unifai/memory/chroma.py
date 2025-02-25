@@ -22,47 +22,12 @@ MetadataType = Dict[str, Union[str, int, float, bool]]
 ChromaGetResult = Dict[str, Any]
 ChromaQueryResult = Dict[str, Any]
 
-def safe_cast(obj: Any, cls: type[T]) -> T:
-    return cast(cls, obj)
 
 class ChromaMemoryManager(MemoryManager):
     def __init__(self, config: ChromaConfig):
         self.config = config
         
-        if config.storage_type == StorageType.HTTP:
-            try:
-                self.client = chromadb.HttpClient(
-                    host=config.host,
-                    port=config.port,
-                    ssl=False,
-                    headers=None,
-                    settings=Settings(),
-                )
-            except Exception as e:
-                raise ConnectionError(
-                    host=self.config.host,
-                    port=self.config.port,
-                    details=str(e)
-                )
-            
-        elif config.storage_type == StorageType.PERSISTENT:
-            try:
-                self.client = chromadb.PersistentClient(
-                    path=config.persist_directory,
-                    settings=Settings(
-                        allow_reset=True,
-                        is_persistent=True
-                    )
-                )
-            except Exception as e:
-                raise ConnectionError(
-                    host=f"persistent:{self.config.persist_directory}",
-                    port=0,
-                    details=str(e)
-                )
-            
-        else:
-            raise ValueError(f"Invalid storage type: {config.storage_type}")
+        self.client = self._initialize_client()
         
         try:
             self.embedding_function = self._get_embedding_function()
@@ -72,6 +37,40 @@ class ChromaMemoryManager(MemoryManager):
         
         self.plugins: List[MemoryRankPlugin] = []
 
+    def _initialize_client(self) -> Any:
+        try:
+            if self.config.storage_type == StorageType.PERSISTENT:
+                if not self.config.persist_directory:
+                    raise ValueError("persist_directory must be provided for PERSISTENT storage")
+                
+                return chromadb.PersistentClient(
+                    path=self.config.persist_directory, 
+                    settings=Settings(
+                        anonymized_telemetry=False
+                    )
+                )
+            elif self.config.storage_type == StorageType.HTTP:
+                return chromadb.HttpClient(
+                    host=self.config.host or "localhost",
+                    port=self.config.port or 8000,
+                    settings=Settings(
+                        anonymized_telemetry=False
+                    )
+                )
+            else:
+                return chromadb.Client(
+                    Settings(
+                        anonymized_telemetry=False,
+                        is_persistent=False
+                    )
+                )
+        except Exception as e:
+            raise ConnectionError(
+            host=self.config.host,
+            port=self.config.port,
+               details=str(e)
+        )
+
     def _get_embedding_function(self):
         try:
             from chromadb.utils import embedding_functions
@@ -79,7 +78,7 @@ class ChromaMemoryManager(MemoryManager):
         except Exception as e:
             raise MemoryError(f"Failed to initialize embedding function: {str(e)}")
 
-    def _initialize_collection(self) -> Collection:
+    def _initialize_collection(self) -> Any:
         try:
             return self.client.get_or_create_collection(
                 name=self.config.collection_name,
@@ -90,14 +89,15 @@ class ChromaMemoryManager(MemoryManager):
                 embedding_function=self.embedding_function
             )
         except Exception as e:
-            raise CollectionError(
-                operation="initialize_collection",
-                details=str(e)
-            )
+            raise ConnectionError(
+            host=self.config.host,
+            port=self.config.port,
+               details=str(e)
+        )
 
     def _convert_embedding_to_list(self, embedding: Any) -> List[float]:
         if embedding is None:
-            return None
+            return []
         if hasattr(embedding, 'tolist'):
             return embedding.tolist()
         if isinstance(embedding, (list, np.ndarray)):
@@ -456,6 +456,6 @@ class ChromaMemoryManager(MemoryManager):
                 print(f"Failed to deserialize memory {memory_id}: {str(e)}")
                 continue
         
-        # Sort by created_at timestamp in descending order
         memories.sort(key=lambda x: x.created_at, reverse=True)
         return memories[:count]
+       

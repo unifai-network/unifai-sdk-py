@@ -9,7 +9,7 @@ from typing import (
     Any,
     runtime_checkable
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from unifai.memory.base import Memory
 
 T = TypeVar('T')
@@ -32,7 +32,7 @@ class RankingResult:
     """Result of a ranking operation"""
     memories: List[Memory]
     scores: Dict[str, float]
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class MemoryContext:
@@ -40,7 +40,7 @@ class MemoryContext:
     content: str
     count: int
     threshold: float = 0.0
-    _extra_args: Dict[str, Any] = None
+    _extra_args: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def extra_args(self) -> Dict[str, Any]:
@@ -85,7 +85,7 @@ class MemoryRankPlugin(Generic[PluginConfig], ABC):
         memories: List[Memory],
         context: PluginContext
     ) -> Dict[str, float]:
-        """Calculate scores for each memory"""
+        """Calculate scores for memories"""
         pass
         
     async def rerank(

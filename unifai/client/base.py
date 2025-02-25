@@ -27,6 +27,12 @@ class MessageContext(ABC):
         pass
 
 class BaseClient(ABC):
+    def __init__(self, client_id: str):
+        self._client_id = client_id
+        self._started = False
+        self._message_queue: asyncio.Queue[MessageContext] = asyncio.Queue()
+        self._stop_event = asyncio.Event()
+
     @property
     @abstractmethod
     def client_id(self) -> str:

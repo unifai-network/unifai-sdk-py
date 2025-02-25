@@ -6,7 +6,15 @@ import litellm
 import logging
 import re
 import uuid
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple, Set, Any
+
+from telegram import LinkPreviewOptions, Update
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    filters,
+    MessageHandler,
+)
 
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts, generate_uuid_from_id, get_collection_name, ChannelLockManager, sanitize_collection_name
@@ -58,7 +66,7 @@ class Agent:
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self.model_manager = ModelManager()
         self._stop_event = asyncio.Event()
-        self._tasks = []
+        self._tasks: List[asyncio.Task] = []
         
         self._channel_locks: Dict[str, asyncio.Lock] = {}
         
@@ -67,7 +75,7 @@ class Agent:
 
         self.memory_config = chroma_config
 
-        self._clients = {}
+        self._clients: Dict[str, BaseClient] = {}
         if clients:
             for client in clients:
                 self.add_client(client)
