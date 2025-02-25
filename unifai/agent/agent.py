@@ -7,7 +7,7 @@ import logging
 import re
 import traceback
 import uuid
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple, Set, Any
 
 from .model import ModelManager
 from .utils import load_prompt, load_all_prompts, generate_uuid_from_id, get_collection_name, ChannelLockManager, sanitize_collection_name
@@ -60,7 +60,7 @@ class Agent:
         self.tools = Tools(api_key=self.api_key)
         self.model_manager = ModelManager()
         self._stop_event = asyncio.Event()
-        self._tasks = []
+        self._tasks: List[asyncio.Task] = []
         
         self._channel_locks: Dict[str, asyncio.Lock] = {}
         
@@ -70,7 +70,7 @@ class Agent:
         self.memory_config = chroma_config
         self.tool_call_concurrency = tool_call_concurrency
 
-        self._clients = {}
+        self._clients: Dict[str, BaseClient] = {}
         if clients:
             for client in clients:
                 self.add_client(client)
