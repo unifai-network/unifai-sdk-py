@@ -35,6 +35,7 @@ class Agent:
             storage_type=StorageType.PERSISTENT,
             persist_directory="./chroma_db",
         ),
+        tool_call_concurrency: int = 10,
     ):
         """Initialize an Agent instance.
 
@@ -65,6 +66,7 @@ class Agent:
         self.goal_reflector = GoalReflector(litellm.acompletion)
 
         self.memory_config = chroma_config
+        self.tool_call_concurrency = tool_call_concurrency
 
         self._clients = {}
         if clients:
@@ -365,7 +367,7 @@ class Agent:
                 messages=messages,
                 tools=self.tools.get_tools(),
             )
-            
+
             assistant_message = response.choices[0].message  # type: ignore
 
             if assistant_message.content or assistant_message.tool_calls:
@@ -390,7 +392,7 @@ class Agent:
                 )
                 tool_infos_collection.append(tool_info)
 
-            results = await self.tools.call_tools(assistant_message.tool_calls)  # type: ignore
+            results = await self.tools.call_tools(assistant_message.tool_calls, concurrency=self.tool_call_concurrency)  # type: ignore
 
             if not results:
                 break

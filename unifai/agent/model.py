@@ -16,30 +16,46 @@ class ModelManager:
     def set_chat_completion_function(self, f):
         self._chat_completion = f
 
-    async def chat_completion(self, model, messages, timeout=60, **kwargs):
-        response = await asyncio.wait_for(
-            self._chat_completion(
-                model=model,
-                messages=messages,
-                **kwargs
-            ),
-            timeout=timeout,
-        )
-
-        try:
-            logger.info(f'Input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}')  # type: ignore
-            current_time = datetime.datetime.now()
-            self.usage_history.append((current_time, response.usage.prompt_tokens, response.usage.completion_tokens))  # type: ignore
-            cutoff_time = current_time - datetime.timedelta(hours=self.max_history_hours)
-            self.usage_history = [stat for stat in self.usage_history if stat[0] > cutoff_time]
-            stats = self.get_usage_stats(hours=1)
-            logger.info(f'Last hour input tokens: {stats["input_tokens"]}, output tokens: {stats["output_tokens"]}')
-            stats = self.get_usage_stats(hours=24)
-            logger.info(f'Last 24 hours input tokens: {stats["input_tokens"]}, output tokens: {stats["output_tokens"]}')
-        except Exception as e:
-            logger.error(f'Error updating usage stats: {e}')
-
-        return response
+    async def chat_completion(self, model, messages, timeout=60, retries=3, **kwargs):
+        attempt = 0
+        last_error = None
+        
+        while attempt < retries:
+            try:
+                response = await asyncio.wait_for(
+                    self._chat_completion(
+                        model=model,
+                        messages=messages,
+                        **kwargs
+                    ),
+                    timeout=timeout,
+                )
+                
+                try:
+                    logger.info(f'Input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}')  # type: ignore
+                    current_time = datetime.datetime.now()
+                    self.usage_history.append((current_time, response.usage.prompt_tokens, response.usage.completion_tokens))  # type: ignore
+                    cutoff_time = current_time - datetime.timedelta(hours=self.max_history_hours)
+                    self.usage_history = [stat for stat in self.usage_history if stat[0] > cutoff_time]
+                    stats = self.get_usage_stats(hours=1)
+                    logger.info(f'Last hour input tokens: {stats["input_tokens"]}, output tokens: {stats["output_tokens"]}')
+                    stats = self.get_usage_stats(hours=24)
+                    logger.info(f'Last 24 hours input tokens: {stats["input_tokens"]}, output tokens: {stats["output_tokens"]}')
+                except Exception as e:
+                    logger.error(f'Error updating usage stats: {e}')
+                
+                return response
+                
+            except Exception as e:
+                attempt += 1
+                last_error = e
+                if attempt < retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Attempt {attempt} failed with error: {e}. Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"All {retries} attempts failed. Last error: {e}")
+                    raise last_error
 
     def get_usage_stats(self, hours=None):
         """Get usage statistics for the specified number of hours."""
