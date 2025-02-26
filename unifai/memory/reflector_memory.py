@@ -3,7 +3,7 @@ import uuid
 import litellm
 import unifai
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from unifai.memory import (
     Memory, 
     ChromaConfig,
@@ -20,7 +20,12 @@ from unifai.memory.tool_plugin import ToolSimilarityPlugin
 
 load_dotenv()
 
-tools = unifai.Tools(api_key=os.getenv("AGENT_API_KEY"))
+api_key = os.getenv("AGENT_API_KEY")
+if api_key is None:
+    raise ValueError("AGENT_API_KEY environment variable is not set")
+    
+tools = unifai.Tools(api_key=api_key) 
+
 persistent_config = ChromaConfig(
     storage_type=StorageType.PERSISTENT,
     persist_directory="./chroma_db",
@@ -43,11 +48,11 @@ memory_manager.add_plugin(tool_plugin)
 
 print("Active plugins:", memory_manager.list_plugins())
 
-tool_plugin = memory_manager.get_plugin("ToolSimilarityPlugin")
-if tool_plugin:
-    tool_plugin.weight = 0.5
+retrieved_plugin = memory_manager.get_plugin("ToolSimilarityPlugin")
+if retrieved_plugin is not None and isinstance(retrieved_plugin, ToolSimilarityPlugin):
+    retrieved_plugin.weight = 0.5
 
-async def process_interaction(user_message: str, previous_memories: List[Memory] = None):
+async def process_interaction(user_message: str, previous_memories: Optional[List[Memory]] = None):
     messages = [{"content": system_prompt, "role": "system"}]
     
     if previous_memories:
@@ -102,45 +107,49 @@ async def process_interaction(user_message: str, previous_memories: List[Memory]
 
     fact_result = await fact_reflector.reflect(full_interaction)
     goal_result = await goal_reflector.reflect(full_interaction)
-    if fact_result.success and fact_result.data.get('claims'):
-        fact_memory = Memory(
-            id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
-            agent_id=uuid.uuid4(),
-            content={
-                "text": "Extracted facts from conversation"
-            },
-            memory_type=MemoryType.FACT,
-            metadata={
-                "claims": fact_result.data['claims'],
-                "source_interaction": full_interaction
-            },
-            role=MemoryRole.SYSTEM,
-            tools=tool_infos_collection if tool_infos_collection else None,
-            unique=True
-        )
-        await memory_manager.create_memory(fact_memory)
-        print(f"Stored fact memory with ID: {fact_memory.id}")
+    if fact_result.success and fact_result.data is not None:
+        facts = fact_result.data.get('claims', [])
+        if facts:
+            fact_memory = Memory(
+                id=uuid.uuid4(),
+                user_id=uuid.uuid4(),
+                agent_id=uuid.uuid4(),
+                content={
+                    "text": "Extracted facts from conversation",
+                    "claims": facts
+                },
+                memory_type=MemoryType.FACT,
+                metadata={
+                    "source_interaction": full_interaction
+                },
+                role=MemoryRole.SYSTEM,
+                tools=tool_infos_collection if tool_infos_collection else None,
+                unique=True
+            )
+            await memory_manager.create_memory(fact_memory)
+            print(f"Stored fact memory with ID: {fact_memory.id}")
 
-    if goal_result.success and goal_result.data.get('goals'):
-        goal_memory = Memory(
-            id=uuid.uuid4(),
-            user_id=uuid.uuid4(),
-            agent_id=uuid.uuid4(),
-            content={
-                "text": "Goals and progress tracking"
-            },
-            memory_type=MemoryType.GOAL,
-            metadata={
-                "goals": goal_result.data['goals'],
-                "source_interaction": full_interaction
-            },
-            role=MemoryRole.SYSTEM,
-            tools=tool_infos_collection if tool_infos_collection else None,
-            unique=True
-        )
-        await memory_manager.create_memory(goal_memory)
-        print(f"Stored goal memory with ID: {goal_memory.id}")
+    if goal_result.success and goal_result.data is not None:
+        goals = goal_result.data.get('goals', [])
+        if goals:
+            goal_memory = Memory(
+                id=uuid.uuid4(),
+                user_id=uuid.uuid4(),
+                agent_id=uuid.uuid4(),
+                content={
+                    "text": "Goals and progress tracking",
+                    "goals": goals
+                },
+                memory_type=MemoryType.GOAL,
+                metadata={
+                    "source_interaction": full_interaction
+                },
+                role=MemoryRole.SYSTEM,
+                tools=tool_infos_collection if tool_infos_collection else None,
+                unique=True
+            )
+            await memory_manager.create_memory(goal_memory)
+            print(f"Stored goal memory with ID: {goal_memory.id}")
 
     interaction_memory = Memory(
         id=uuid.uuid4(),
@@ -182,6 +191,44 @@ async def main():
     print("Starting reflector memory system test...")
     await test_reflector_memory()
     print("Test completed successfully!")
+
+async def consolidate_fact_memories(memory_manager, similarity_threshold=0.85):
+    """Consolidate similar fact memories to reduce redundancy."""
+
+    all_facts = await memory_manager.get_memories_by_type(
+        memory_type=MemoryType.FACT,
+        count=100  
+    )
+    
+    consolidated = []
+    to_remove = set()
+    
+    for i, fact1 in enumerate(all_facts):
+        if i in to_remove:
+            continue
+            
+        similar_facts = [fact1]
+        
+        for j, fact2 in enumerate(all_facts[i+1:], i+1):
+            if j in to_remove:
+                continue
+                
+            similarity = calculate_similarity(fact1.content["text"], fact2.content["text"])
+            if similarity > similarity_threshold:
+                similar_facts.append(fact2)
+                to_remove.add(j)
+        
+        if len(similar_facts) > 1:
+            consolidated_memory = await merge_memories(similar_facts)
+            consolidated.append(consolidated_memory)
+            
+
+            for fact in similar_facts:
+                await memory_manager.remove_memory(fact.id)
+            
+            await memory_manager.create_memory(consolidated_memory)
+    
+    return len(consolidated)
 
 if __name__ == "__main__":
     asyncio.run(main()) 
