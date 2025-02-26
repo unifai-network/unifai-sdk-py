@@ -1,7 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
 import asyncio
-import json
 import litellm
 import logging
 import re
@@ -22,8 +21,7 @@ from ..memory import (
 )
 from ..reflector import FactReflector, GoalReflector
 from ..tools import Tools
-from ..tools.tools import FunctionName
-from ..client.base import BaseClient, MessageContext
+from ..client.base import BaseClient, MessageContext, Message
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +54,7 @@ class Agent:
             'default': 'gpt-4o',
         }
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
+        self.tools = Tools(api_key=self.api_key)
         self.model_manager = ModelManager()
         self._stop_event = asyncio.Event()
         self._tasks = []
@@ -253,9 +252,16 @@ class Agent:
     def get_channel_lock(self, client_id: str, chat_id: str) -> asyncio.Lock:
         return self._channel_lock_manager.get_lock(client_id, chat_id)
 
-    async def get_reply(self, message: str, user_id: str, chat_id: str, history_count: int = 10) -> tuple[str, list[ToolInfo], list[dict], list[dict]]:
+    async def get_reply(
+        self,
+        client: BaseClient,
+        ctx: MessageContext,
+        history_count: int = 10,
+    ) -> tuple[list[Message], list[ToolInfo], list[Dict]]:
+        message = ctx.message
+        user_id = ctx.user_id
+        chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
-        tools = Tools(api_key=self.api_key)
 
         response = await self.model_manager.chat_completion(
             model=self.get_model("history"),
@@ -350,70 +356,76 @@ class Agent:
             ]
         }
         tool_infos_collection = []
-        reply = ""
+        reply_messages: List[Message] = []
         
+        sent_using_tools = False
         while True:
             response = await self.model_manager.chat_completion(
                 model=self.get_model("default"),
                 messages=messages,
-                tools=tools.get_tools(),
+                tools=self.tools.get_tools(),
             )
             
             assistant_message = response.choices[0].message  # type: ignore
 
             if assistant_message.content or assistant_message.tool_calls:
                 messages.append(assistant_message)
+                reply_messages.append(assistant_message)
                 interaction["messages"].append(assistant_message.model_dump(mode='json'))
-
-            if assistant_message.content:
-                reply += f'{assistant_message.content}\n'
 
             if not assistant_message.tool_calls:
                 break
-            
+
+            if not sent_using_tools:    
+                await client.send_message(ctx, [Message(
+                    role="assistant",
+                    content="Searching for services...",
+                )])
+                sent_using_tools = True
+
             for tool_call in assistant_message.tool_calls:
                 tool_info = ToolInfo(
                     name=tool_call.function.name or "",
                     description=tool_call.function.arguments
                 )
                 tool_infos_collection.append(tool_info)
-                
-                args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
-                if tool_call.function.name == FunctionName.SEARCH_TOOLS.value:
-                    reply += f"Searching services: {args.get('query')}...\n"
-                elif tool_call.function.name == FunctionName.CALL_TOOL.value:
-                    reply += f"Invoking service: {args.get('action')}...\n"
 
-            results = await tools.call_tools(assistant_message.tool_calls)  # type: ignore
+            results = await self.tools.call_tools(assistant_message.tool_calls)  # type: ignore
 
             if not results:
                 break
 
             messages.extend(results)
             interaction["messages"].extend(results)
+            for result in results:
+                reply_messages.append(Message.model_validate(result))
+
+        await client.send_message(ctx, reply_messages)
 
         return (
-            reply.rstrip('\n') if reply else "Sorry, something went wrong.",
+            reply_messages,
             tool_infos_collection,
-            messages,
             interaction["messages"]
         )
 
     async def process_message_with_memory(
         self,
-        message: str,
-        user_id: str,
-        chat_id: str,
+        client: BaseClient,
+        ctx: MessageContext,
         history_count: int = 10,
-    ) -> str:
+    ) -> List[Message]:
+        message = ctx.message
+        user_id = ctx.user_id
+        chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
         
-        reply, tool_infos, messages, interaction_content = await self.get_reply(
-            message, 
-            user_id, 
-            chat_id, 
+        reply_messages, tool_infos, interaction_content = await self.get_reply(
+            client,
+            ctx,
             history_count=history_count
         )
+
+        reply_text = reply_messages[-1].get("content", "") if reply_messages else ""
         
         user_uuid = generate_uuid_from_id(str(user_id))
         agent_uuid = generate_uuid_from_id(self._agent_id)
@@ -427,8 +439,8 @@ class Agent:
         }
 
         tasks = [
-            self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply}"),
-            self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply}")
+            self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply_text}"),
+            self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply_text}")
         ]
 
         fact_result, goal_result = await asyncio.gather(*tasks)
@@ -497,7 +509,7 @@ class Agent:
             user_id=user_uuid,
             agent_id=agent_uuid,
             content={
-                "text": f"User: {message}\nAssistant: {reply}",
+                "text": f"User: {message}\nAssistant: {reply_text}",
                 "interaction": {
                     "messages": interaction_content
                 }
@@ -513,7 +525,7 @@ class Agent:
         if memory_tasks:
             await asyncio.gather(*memory_tasks)
         
-        return reply
+        return reply_messages
 
     def add_client(self, client: BaseClient) -> None:
         """Add a new client to the agent"""
@@ -541,18 +553,16 @@ class Agent:
     async def _process_channel_message(self, client: BaseClient, ctx: MessageContext) -> None:
         """Process message within a channel"""
         channel_lock = self.get_channel_lock(client.client_id, ctx.chat_id)
-        
+
         async with channel_lock:
             try:
-                reply = await self.process_message_with_memory(
-                    ctx.message,
-                    ctx.user_id,
-                    ctx.chat_id
-                )
-                
-                await client.send_message(ctx, reply)
+                await self.process_message_with_memory(client, ctx)
             except Exception as e:
                 logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
+                await client.send_message(ctx, [Message(
+                    role="assistant",
+                    content=f"Sorry, something went wrong.",
+                )])
 
     def get_collection_name(self, client_id: str, chat_id: str) -> str:
         """Generate a unique collection name for memory storage"""

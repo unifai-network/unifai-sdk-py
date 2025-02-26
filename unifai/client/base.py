@@ -1,30 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import List, Any, Dict, Optional
+from dataclasses import dataclass
+import litellm
 
+Message = litellm.Message
+
+@dataclass
 class MessageContext(ABC):
-    @property
-    @abstractmethod
-    def chat_id(self) -> str:
-        """Get chat ID"""
-        pass
-        
-    @property
-    @abstractmethod
-    def user_id(self) -> str:
-        """Get user ID"""
-        pass
-        
-    @property
-    @abstractmethod
-    def message(self) -> str:
-        """Get message content"""
-        pass
-        
-    @property
-    @abstractmethod
-    def extra(self) -> Dict[str, Any]:
-        """Get extra data"""
-        pass
+    chat_id: str
+    user_id: str
+    message: str
+    extra: Dict[str, Any]
 
 class BaseClient(ABC):
     @property
@@ -49,6 +35,6 @@ class BaseClient(ABC):
         raise NotImplementedError("receive_message is not implemented")
 
     @abstractmethod
-    async def send_message(self, ctx: MessageContext, reply: str):
+    async def send_message(self, ctx: MessageContext, reply_messages: List[Message]):
         """Send a message using the context"""
         raise NotImplementedError("send_message is not implemented")
