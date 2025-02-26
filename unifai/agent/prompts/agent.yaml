@@ -16,7 +16,6 @@ system: |
   
   Important rules:
   - Actions returned by search_services must ONLY be used in invoke_service function as payload, they are NOT functions that can be called directly.
-  - Keep responses in plain text and avoid markdown to be compatible with Telegram format
 
 history: |
   You are an intelligent personal assistant receiving messages from a user.

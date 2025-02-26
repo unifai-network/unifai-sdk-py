@@ -1,10 +1,11 @@
 import asyncio
 import logging
+from functools import wraps
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 from telegram import Update, LinkPreviewOptions
 from telegram.ext import ApplicationBuilder, ContextTypes, filters, MessageHandler
-from typing import Dict, Any, Optional
-from functools import wraps
-from .base import BaseClient, MessageContext
+from .base import BaseClient, MessageContext, Message
 
 logger = logging.getLogger(__name__)
 
@@ -16,33 +17,18 @@ def ensure_started(func):
         return await func(self, *args, **kwargs)
     return wrapper
 
+@dataclass
 class TelegramMessageContext(MessageContext):
-    def __init__(self, chat_id: str, user_id: str, message: str, extra: Dict[str, Any]):
-        self._chat_id = chat_id
-        self._user_id = user_id
-        self._message = message
-        self._extra = extra
-
-    @property
-    def chat_id(self) -> str:
-        return self._chat_id
-
-    @property
-    def user_id(self) -> str:
-        return self._user_id
-
-    @property
-    def message(self) -> str:
-        return self._message
-
-    @property
-    def extra(self) -> Dict[str, Any]:
-        return self._extra
+    chat_id: str
+    user_id: str
+    message_id: int
+    message: str
+    extra: Dict[str, Any]
 
 class TelegramClient(BaseClient):
-    def __init__(self, bot_token: str, bot_name: str):
+    def __init__(self, bot_token: str):
         self.bot_token = bot_token
-        self.bot_name = bot_name
+        self.bot_name = ""
         self._application = None
         self._started = False
         self._message_queue = asyncio.Queue()
@@ -58,10 +44,13 @@ class TelegramClient(BaseClient):
             return
             
         self._application = ApplicationBuilder().token(self.bot_token).build()
-        
-        if not self._application.updater:
-            raise RuntimeError("Updater is not initialized")
-        
+
+        await self._application.initialize()
+
+        self.bot_name = self._application.bot.username
+
+        logger.info(f"Bot name: {self.bot_name}")
+
         filter_conditions = (
             (filters.CaptionRegex(f"@{self.bot_name}") & (~filters.COMMAND)) |
             (filters.Mention(self.bot_name) & (~filters.COMMAND)) |
@@ -73,7 +62,9 @@ class TelegramClient(BaseClient):
             self._handle_telegram_update,
         ))
 
-        await self._application.initialize()
+        if not self._application.updater:
+            raise RuntimeError("Updater is not initialized")
+
         await self._application.start()
         await self._application.updater.start_polling()
         self._started = True
@@ -94,7 +85,7 @@ class TelegramClient(BaseClient):
         self._started = False
 
     @ensure_started
-    async def receive_message(self) -> Optional[MessageContext]:
+    async def receive_message(self) -> Optional[TelegramMessageContext]:
         """Receive a message from the queue"""
         try:
             return await self._message_queue.get()
@@ -103,14 +94,18 @@ class TelegramClient(BaseClient):
             return None
 
     @ensure_started
-    async def send_message(self, ctx: MessageContext, reply: str):
+    async def send_message(self, ctx: TelegramMessageContext, reply_messages: List[Message]):
         """Send a message using the context"""
         if not self._application:
             raise RuntimeError("Application not initialized")
 
+        reply_text = "Failed to generate response."
+        if reply_messages and reply_messages[-1].content:
+            reply_text = reply_messages[-1].content 
+
         MAX_MESSAGE_LENGTH = 4000
-        messages = [reply[i:i + MAX_MESSAGE_LENGTH] 
-                   for i in range(0, len(reply), MAX_MESSAGE_LENGTH)]
+        messages = [reply_text[i:i + MAX_MESSAGE_LENGTH] 
+                   for i in range(0, len(reply_text), MAX_MESSAGE_LENGTH)]
         
         for msg in messages:
             await self._application.bot.send_message(
@@ -131,6 +126,7 @@ class TelegramClient(BaseClient):
         ctx = TelegramMessageContext(
             chat_id=str(update.effective_chat.id),
             user_id=str(update.message.from_user.id),
+            message_id=update.message.message_id,
             message=message,
             extra={
                 "is_private": update.effective_chat.type == "private",
