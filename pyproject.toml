@@ -26,7 +26,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "chromadb>=0.4.0",
     "mcp>=1.2.0",
-    "python-telegram-bot>=20.0"
+    "python-telegram-bot>=20.0",
+    "google-cloud-aiplatform>=1.82.0",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
@@ -40,6 +41,9 @@ unifai-tools-mcp = "unifai.tools.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unifai"]
+
+[tool.uv.sources]
+litellm = { git = "https://github.com/BerriAI/litellm" }
 
 [dependency-groups]
 dev = [

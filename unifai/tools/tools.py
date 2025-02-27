@@ -103,13 +103,17 @@ class Tools:
     def set_api_endpoint(self, endpoint: str):
         self._api.set_endpoint(endpoint)
 
-    def get_tools(self) -> List[Dict[str, Any]]:
+    def get_tools(self, cache_control: bool = False) -> List[Dict[str, Any]]:
         """
         Get the list of tools in OpenAI API compatible format.
 
+        :param cache_control: Whether to add cache control to the tools, only works for Anthropic models
         :return: List of tools
         """
-        return [tool.model_dump(mode="json") for tool in tool_list]
+        t = [tool.model_dump(mode="json") for tool in tool_list]
+        if cache_control:
+            t[-1]["cache_control"] = { "type": "ephemeral" }
+        return t
 
     async def call_tool(self, name: str | FunctionName, arguments: dict | str) -> Any:
         """

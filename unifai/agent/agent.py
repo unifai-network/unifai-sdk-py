@@ -4,6 +4,7 @@ import asyncio
 import litellm
 import logging
 import re
+import traceback
 import uuid
 from typing import Dict, List
 
@@ -298,10 +299,10 @@ class Agent:
         )
 
         system_prompt = self.get_prompt("agent.system").format(
-            time=datetime.now().isoformat(),
+            date=datetime.now().strftime("%Y-%m-%d"),
         )
 
-        messages: List[Dict | Message] = [{"role": "system", "content": system_prompt}]
+        system_messages = [{"type": "text", "text": system_prompt}]
 
         if relevant_memories:
             facts = []
@@ -313,16 +314,19 @@ class Agent:
                     goals.extend(mem.content.get('goals', []))
             
             if facts:
-                messages.append({
-                    "role": "system",
-                    "content": "Relevant facts:\n" + "\n".join([f"- {fact}" for fact in facts])
+                system_messages.append({
+                    "type": "text",
+                    "text": "Relevant facts:\n" + "\n".join([f"- {fact}" for fact in facts])
                 })
             
             if goals:
-                messages.append({
-                    "role": "system",
-                    "content": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
+                system_messages.append({
+                    "type": "text",
+                    "text": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
                 })
+
+        system_messages[-1]["cache_control"] = { "type": "ephemeral" }
+        messages: List[Dict | Message] = [{"role": "system", "content": system_messages}]
 
         if recent_memories:
             recent_interactions = sorted(
@@ -350,7 +354,13 @@ class Agent:
                         elif has_non_tool_message:
                             messages.append(msg)
 
-        messages.append({"content": message, "role": "user"})
+        messages.append({
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": message,
+            }],
+        })
         interaction = {
             "messages": [
                 {
@@ -364,11 +374,14 @@ class Agent:
         
         sent_using_tools = False
         while True:
+            messages[-1]["content"][-1]["cache_control"] = { "type": "ephemeral" }
             response = await self.model_manager.chat_completion(
                 model=self.get_model("default"),
                 messages=messages,
-                tools=self.tools.get_tools(),
+                tools=self.tools.get_tools(cache_control=True),
+                extra_headers={ "anthropic-beta": "token-efficient-tools-2025-02-19" },
             )
+            del messages[-1]["content"][-1]["cache_control"]
 
             assistant_message = response.choices[0].message  # type: ignore
 
@@ -403,6 +416,14 @@ class Agent:
             interaction["messages"].extend(results)
             for result in results:
                 reply_messages.append(Message.model_validate(result))
+
+            messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "Above is the result",
+                }]
+            })
 
         await client.send_message(ctx, reply_messages)
 
@@ -562,7 +583,8 @@ class Agent:
             try:
                 await self.process_message_with_memory(client, ctx)
             except Exception as e:
-                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}")
+                error_traceback = traceback.format_exc()
+                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}\n{error_traceback}")
                 await client.send_message(ctx, [Message(
                     role="assistant",
                     content=f"Sorry, something went wrong.",
