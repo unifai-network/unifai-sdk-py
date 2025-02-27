@@ -297,9 +297,11 @@ class Agent:
             }
         )
 
-        messages = []
-        system_prompt = self.get_prompt("agent.system") 
-        messages.append({"content": system_prompt, "role": "system"})
+        system_prompt = self.get_prompt("agent.system").format(
+            time=datetime.now().isoformat(),
+        )
+
+        messages: List[Dict | Message] = [{"role": "system", "content": system_prompt}]
 
         if relevant_memories:
             facts = []
