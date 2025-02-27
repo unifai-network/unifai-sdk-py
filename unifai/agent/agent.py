@@ -258,7 +258,7 @@ class Agent:
         self,
         client: BaseClient,
         ctx: MessageContext,
-        history_count: int = 10,
+        history_count: int,
     ) -> tuple[list[Message], list[ToolInfo], list[Dict]]:
         message = ctx.message
         user_id = ctx.user_id
@@ -416,7 +416,7 @@ class Agent:
         self,
         client: BaseClient,
         ctx: MessageContext,
-        history_count: int = 10,
+        history_count: int = 5,
     ) -> List[Message]:
         message = ctx.message
         user_id = ctx.user_id
