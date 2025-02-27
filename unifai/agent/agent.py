@@ -416,7 +416,7 @@ class Agent:
         self,
         client: BaseClient,
         ctx: MessageContext,
-        history_count: int = 5,
+        history_count: int = 1,
     ) -> List[Message]:
         message = ctx.message
         user_id = ctx.user_id
