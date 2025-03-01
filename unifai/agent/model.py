@@ -56,7 +56,7 @@ class ModelManager:
                 attempt += 1
                 last_error = e
                 if attempt < retries:
-                    wait_time = 2 ** attempt
+                    wait_time = 10 * 2 ** attempt
                     logger.warning(f"Attempt {attempt} failed with error: {e}. Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:

@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 import asyncio
 import litellm
+from litellm.exceptions import RateLimitError
 import logging
 import re
 import traceback
@@ -592,9 +593,12 @@ class Agent:
             except Exception as e:
                 error_traceback = traceback.format_exc()
                 logger.error(f"Error processing message in channel {ctx.chat_id}: {e}\n{error_traceback}")
+                error_message = "Sorry, something went wrong."
+                if isinstance(e, RateLimitError):
+                    error_message = "Sorry, I'm being rate limited. Please try again later."
                 await client.send_message(ctx, [Message(
                     role="assistant",
-                    content=f"Sorry, something went wrong.",
+                    content=error_message,
                 )])
 
     def get_collection_name(self, client_id: str, chat_id: str) -> str:
