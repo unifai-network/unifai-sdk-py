@@ -298,6 +298,9 @@ class Agent:
             }
         )
 
+        model = self.get_model("default") or ""
+        anthropic_cache_control = "anthropic" in model.lower()
+
         system_prompt = self.get_prompt("agent.system").format(
             date=datetime.now().strftime("%Y-%m-%d"),
         )
@@ -325,7 +328,8 @@ class Agent:
                     "text": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
                 })
 
-        system_messages[-1]["cache_control"] = { "type": "ephemeral" }
+        if anthropic_cache_control:
+            system_messages[-1]["cache_control"] = { "type": "ephemeral" }
         messages: List[Dict | Message] = [{"role": "system", "content": system_messages}]
 
         if recent_memories:
@@ -374,14 +378,17 @@ class Agent:
         
         sent_using_tools = False
         while True:
-            messages[-1]["content"][-1]["cache_control"] = { "type": "ephemeral" }
+            if anthropic_cache_control:
+                messages[-1]["content"][-1]["cache_control"] = { "type": "ephemeral" }
             response = await self.model_manager.chat_completion(
-                model=self.get_model("default"),
+                model=model,
                 messages=messages,
-                tools=self.tools.get_tools(cache_control=True),
-                extra_headers={ "anthropic-beta": "token-efficient-tools-2025-02-19" },
+                tools=self.tools.get_tools(cache_control=anthropic_cache_control),
+                parallel_tool_calls=True,
+                extra_headers={ "anthropic-beta": "token-efficient-tools-2025-02-19" } if anthropic_cache_control else {},
             )
-            del messages[-1]["content"][-1]["cache_control"]
+            if anthropic_cache_control:
+                del messages[-1]["content"][-1]["cache_control"]
 
             assistant_message = response.choices[0].message  # type: ignore
 

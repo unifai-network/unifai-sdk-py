@@ -28,6 +28,7 @@ dependencies = [
     "mcp>=1.2.0",
     "python-telegram-bot>=20.0",
     "google-cloud-aiplatform>=1.82.0",
+    "boto3>=1.37.3",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
