@@ -39,17 +39,22 @@ class FunctionName(Enum):
 function_list: List[Function] = [
     Function(
         name=FunctionName.SEARCH_TOOLS.value,
-        description=f"Search for tools. The tools cover a wide range of domains include data source, API, SDK, etc. Try searching whenever you need to use a tool. Returned actions should ONLY be used in {FunctionName.CALL_TOOL.value}.",
+        description=(
+            "Search for services. The services cover a wide range of domains include data source, API, SDK, etc. "
+            "Try searching whenever you need to use a service. "
+            f"Returned actions should ONLY be used in {FunctionName.CALL_TOOL.value}. "
+            "Note that this function is not web search. If you need to search the web, try searching for web search services."
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The query to search for tools, you can describe what you want to do or what tools you want to use"
+                    "description": "The query to search for services, you can describe what you want to do or what services you want to use"
                 },
                 "limit": {
                     "type": "number",
-                    "description": "The maximum number of tools to return, must be between 1 and 100, default is 10, recommend at least 10"
+                    "description": "The maximum number of services to return, must be between 1 and 100, default is 10, recommend at least 10"
                 }
             },
             "required": ["query"],
@@ -57,7 +62,7 @@ function_list: List[Function] = [
     ),
     Function(
         name=FunctionName.CALL_TOOL.value,
-        description=f"Call a tool returned by {FunctionName.SEARCH_TOOLS.value}",
+        description=f"Call a service returned by {FunctionName.SEARCH_TOOLS.value}",
         parameters={
             "type": "object",
             "properties": {
@@ -67,11 +72,19 @@ function_list: List[Function] = [
                 },
                 "payload": {
                     "type": "string",
-                    "description": f"Action payload, based on the payload schema in the {FunctionName.SEARCH_TOOLS.value} result. You can pass either the json object directly or json encoded string of the object.",
+                    "description": (
+                        f"Action payload, based on the payload schema in the {FunctionName.SEARCH_TOOLS.value} result. "
+                        "You can pass either the json object directly or json encoded string of the object."
+                    ),
                 },
                 "payment": {
                     "type": "number",
-                    "description": "Amount to authorize in USD. Positive number means you will be charged no more than this amount, negative number means you are requesting to get paid for at least this amount. Only include this field if the action you are calling includes payment information.",
+                    "description": (
+                        "Amount to authorize in USD. "
+                        "Positive number means you will be charged no more than this amount, "
+                        "negative number means you are requesting to get paid for at least this amount. "
+                        "Only include this field if the action you are calling includes payment information."
+                    )
                 }
             },
             "required": ["action", "payload"],
