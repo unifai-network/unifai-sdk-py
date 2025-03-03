@@ -1,45 +1,46 @@
 import asyncio
+import os
+import sys
 import litellm
 import unifai
-import sys
+from typing import List
 
-tools = unifai.Tools(api_key="YOUR_AGENT_API_KEY")
+import dotenv
+dotenv.load_dotenv()
 
-system_prompt = """
-You are a personal assistant capable of doing many things with your tools.
-When you are given a task you cannot do (like something you don't know,
-or requires you to take some action), try find appropriate tools to do it.
-"""
+tools = unifai.Tools(api_key=os.getenv("UNIFAI_AGENT_API_KEY", ""))
 
 async def run(msg: str):
-    messages = [
-        {"content": system_prompt, "role": "system"},
+    messages: List = [
+        {"content": unifai.Agent("").get_prompt("agent.system"), "role": "system"},
         {"content": msg, "role": "user"},
     ]
     while True:
         response = await litellm.acompletion(
-            model="openai/gpt-4o",
+            model="anthropic/claude-3-7-sonnet-20250219",
             messages=messages,
             tools=tools.get_tools(),
         )
 
-        if response.choices[0].message.content:
-            print(response.choices[0].message.content)
+        message = response.choices[0].message # type: ignore
 
-        messages.append(response.choices[0].message)
+        if message.content:
+            print(message.content)
 
-        if not response.choices[0].message.tool_calls:
+        messages.append(message)
+
+        if not message.tool_calls:
             break
 
         print(
             "Calling tools: ",
             [
                 f"{tool_call.function.name}({tool_call.function.arguments})"
-                for tool_call in response.choices[0].message.tool_calls
+                for tool_call in message.tool_calls
             ]
         )
 
-        results = await tools.call_tools(response.choices[0].message.tool_calls)
+        results = await tools.call_tools(message.tool_calls) # type: ignore
 
         if len(results) == 0:
             break
