@@ -13,9 +13,13 @@ class ModelManager:
         self.usage_history = []
         self.max_history_hours = 24
         self._chat_completion = litellm.acompletion
+        self._completion_cost_calculator = completion_cost
 
     def set_chat_completion_function(self, f):
         self._chat_completion = f
+
+    def set_completion_cost_calculator(self, f):
+        self._completion_cost_calculator = f
 
     async def chat_completion(self, model, messages, timeout=60, retries=3, **kwargs):
         attempt = 0
@@ -35,7 +39,11 @@ class ModelManager:
                 cached_tokens = response.usage.prompt_tokens_details.cached_tokens if response.usage.prompt_tokens_details else 0 # type: ignore
                 input_tokens = response.usage.prompt_tokens # type: ignore
                 output_tokens = response.usage.completion_tokens # type: ignore
-                cost = completion_cost(response, model=model)
+                cost = 0
+                try:
+                    cost = self._completion_cost_calculator(response, model=model)
+                except Exception as e:
+                    logger.error(f'Error calculating cost: {e}')
 
                 try:
                     logger.info(f'Cached tokens: {cached_tokens}, input tokens: {input_tokens}, output tokens: {output_tokens}, cost: {cost}')
