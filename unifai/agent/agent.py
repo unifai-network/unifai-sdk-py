@@ -83,6 +83,9 @@ class Agent:
     def set_chat_completion_function(self, f):
         self.model_manager.set_chat_completion_function(f)
 
+    def set_completion_cost_calculator(self, f):
+        self.model_manager.set_completion_cost_calculator(f)
+
     def get_all_prompts(self):
         """
         Get all prompts used by combining default prompts with any custom prompts.
@@ -261,11 +264,13 @@ class Agent:
         client: BaseClient,
         ctx: MessageContext,
         history_count: int,
-    ) -> tuple[list[Message], list[ToolInfo], list[Dict]]:
+    ) -> tuple[list[Message], list[ToolInfo], list[Dict], tuple[int, int]]:
         message = ctx.message
         user_id = ctx.user_id
         chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
+        input_tokens = 0
+        output_tokens = 0
 
         response = await self.model_manager.chat_completion(
             model=self.get_model("history"),
@@ -274,6 +279,10 @@ class Agent:
                 {"role": "user", "content": message}
             ],
         )
+
+        input_tokens += response.usage.prompt_tokens # type: ignore
+        output_tokens += response.usage.completion_tokens # type: ignore
+
         use_history = False
         try:
             logger.info(f"History response: {response.choices[0].message.content}")  # type: ignore
@@ -391,7 +400,19 @@ class Agent:
             if anthropic_cache_control:
                 del messages[-1]["content"][-1]["cache_control"]
 
+            input_tokens += response.usage.prompt_tokens # type: ignore
+            output_tokens += response.usage.completion_tokens # type: ignore
+
             assistant_message = response.choices[0].message  # type: ignore
+
+            if assistant_message.tool_calls:
+                # Sanitize tool call function names to ensure they match the pattern
+                # the tool call will still fail but at least the llm call will not fail so llm can correct itself
+                for i, tool_call in enumerate(assistant_message.tool_calls):
+                    if tool_call.function.name:
+                        sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '', tool_call.function.name)
+                        sanitized_name = sanitized_name[:64]
+                        assistant_message.tool_calls[i].function.name = sanitized_name
 
             if assistant_message.content or assistant_message.tool_calls:
                 messages.append(assistant_message)
@@ -401,10 +422,10 @@ class Agent:
             if not assistant_message.tool_calls:
                 break
 
-            if not sent_using_tools:    
+            if not sent_using_tools:
                 await client.send_message(ctx, [Message(
                     role="assistant",
-                    content="Searching for services...",
+                    content="Working on it...",
                 )])
                 sent_using_tools = True
 
@@ -438,7 +459,8 @@ class Agent:
         return (
             reply_messages,
             tool_infos_collection,
-            interaction["messages"]
+            interaction["messages"],
+            (input_tokens, output_tokens),
         )
 
     async def process_message_with_memory(
@@ -446,13 +468,13 @@ class Agent:
         client: BaseClient,
         ctx: MessageContext,
         history_count: int = 1,
-    ) -> List[Message]:
+    ) -> tuple[List[Message], tuple[int, int]]:
         message = ctx.message
         user_id = ctx.user_id
         chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
         
-        reply_messages, tool_infos, interaction_content = await self.get_reply(
+        reply_messages, tool_infos, interaction_content, usage = await self.get_reply(
             client,
             ctx,
             history_count=history_count
@@ -558,7 +580,7 @@ class Agent:
         if memory_tasks:
             await asyncio.gather(*memory_tasks)
         
-        return reply_messages
+        return reply_messages, usage
 
     def add_client(self, client: BaseClient) -> None:
         """Add a new client to the agent"""
@@ -593,9 +615,9 @@ class Agent:
             except Exception as e:
                 error_traceback = traceback.format_exc()
                 logger.error(f"Error processing message in channel {ctx.chat_id}: {e}\n{error_traceback}")
-                error_message = "Sorry, something went wrong."
+                error_message = "Sorry, something went wrong. Most likely the model is being rate limited due to high demand. Please try again later."
                 if isinstance(e, RateLimitError):
-                    error_message = "Sorry, I'm being rate limited. Please try again later."
+                    error_message = "Sorry, I'm being rate limited due to high demand. Please try again later."
                 await client.send_message(ctx, [Message(
                     role="assistant",
                     content=error_message,
