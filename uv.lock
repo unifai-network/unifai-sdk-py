@@ -2624,7 +2624,7 @@ wheels = [
 
 [[package]]
 name = "unifai-sdk"
-version = "0.2.3"
+version = "0.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -2650,7 +2650,7 @@ dev = [
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.0.0" },
     { name = "boto3", specifier = ">=1.37.3" },
-    { name = "chromadb", specifier = ">=0.4.0" },
+    { name = "chromadb", specifier = ">=0.6.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.82.0" },
     { name = "litellm", git = "https://github.com/BerriAI/litellm" },
     { name = "mcp", specifier = ">=1.2.0" },
