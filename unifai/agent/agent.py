@@ -54,13 +54,14 @@ class Agent:
         self._agent_id = agent_id
         self._prompts = {}
         self._models = {
-            'default': 'gpt-4o',
+            'default': 'anthropic/claude-3-7-sonnet-20250219',
         }
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self.tools = Tools(api_key=self.api_key)
         self.model_manager = ModelManager()
         self._stop_event = asyncio.Event()
         self._tasks: List[asyncio.Task] = []
+        self.model_timeout: float | None = 120
         
         self._channel_locks: Dict[str, asyncio.Lock] = {}
         
@@ -85,6 +86,9 @@ class Agent:
 
     def set_completion_cost_calculator(self, f):
         self.model_manager.set_completion_cost_calculator(f)
+
+    def set_model_timeout(self, timeout: float | None):
+        self.model_timeout = timeout
 
     def get_all_prompts(self):
         """
@@ -278,6 +282,7 @@ class Agent:
                 {"role": "system", "content": self.get_prompt("agent.history")},
                 {"role": "user", "content": message}
             ],
+            timeout=self.model_timeout,
         )
 
         input_tokens += response.usage.prompt_tokens # type: ignore
@@ -396,6 +401,7 @@ class Agent:
                 tools=self.tools.get_tools(cache_control=anthropic_cache_control),
                 parallel_tool_calls=True,
                 extra_headers={ "anthropic-beta": "token-efficient-tools-2025-02-19" } if anthropic_cache_control else {},
+                timeout=self.model_timeout,
             )
             if anthropic_cache_control:
                 del messages[-1]["content"][-1]["cache_control"]
