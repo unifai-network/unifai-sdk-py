@@ -21,7 +21,7 @@ class ModelManager:
     def set_completion_cost_calculator(self, f):
         self._completion_cost_calculator = f
 
-    async def chat_completion(self, model, messages, timeout=60, retries=3, **kwargs):
+    async def chat_completion(self, model, messages, timeout: float | None = None, retries=3, **kwargs):
         attempt = 0
         last_error = None
         
