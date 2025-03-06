@@ -3,7 +3,8 @@ from typing import List, Any, Dict, Optional
 from dataclasses import dataclass
 import litellm
 
-Message = litellm.Message
+class Message(litellm.types.utils.Message):
+    pass
 
 @dataclass
 class MessageContext(ABC):

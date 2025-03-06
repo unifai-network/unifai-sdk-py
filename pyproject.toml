@@ -17,7 +17,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "litellm>=1.0.0",
     "PyYAML>=6.0",
     "websockets>=10.0",
     "numpy>=2.0.0",
@@ -29,6 +28,7 @@ dependencies = [
     "python-telegram-bot>=20.0",
     "google-cloud-aiplatform>=1.82.0",
     "boto3>=1.37.3",
+    "litellm>=1.63.0",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
@@ -42,9 +42,6 @@ unifai-tools-mcp = "unifai.tools.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["unifai"]
-
-[tool.uv.sources]
-litellm = { git = "https://github.com/BerriAI/litellm" }
 
 [dependency-groups]
 dev = [
