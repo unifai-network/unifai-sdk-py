@@ -3,7 +3,7 @@ import logging
 from functools import wraps
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
-from telegram import Update, LinkPreviewOptions
+from telegram import Update, LinkPreviewOptions, User, Chat
 from telegram.ext import ApplicationBuilder, ContextTypes, filters, MessageHandler
 from .base import BaseClient, MessageContext, Message
 
@@ -19,11 +19,13 @@ def ensure_started(func):
 
 @dataclass
 class TelegramMessageContext(MessageContext):
+    chat: Chat
     chat_id: str
+    user: User
     user_id: str
-    message_id: int
     message: str
-    extra: Dict[str, Any]
+    message_id: int
+    update: Update
 
 class TelegramClient(BaseClient):
     def __init__(self, bot_token: str):
@@ -124,15 +126,12 @@ class TelegramClient(BaseClient):
             return
 
         ctx = TelegramMessageContext(
+            chat=update.effective_chat,
             chat_id=str(update.effective_chat.id),
+            user=update.message.from_user,
             user_id=str(update.message.from_user.id),
-            message_id=update.message.message_id,
             message=message,
-            extra={
-                "is_private": update.effective_chat.type == "private",
-                "has_media": bool(update.message.photo or update.message.video or update.message.document),
-                "telegram_user": update.message.from_user,
-                "telegram_chat": update.effective_chat
-            }
+            message_id=update.message.message_id,
+            update=update,
         )
-        await self._message_queue.put(ctx) 
+        await self._message_queue.put(ctx)

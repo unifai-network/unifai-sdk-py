@@ -11,7 +11,6 @@ class MessageContext(ABC):
     chat_id: str
     user_id: str
     message: str
-    extra: Dict[str, Any]
 
 class BaseClient(ABC):
     @property
