@@ -5,6 +5,7 @@ import yaml
 import uuid
 import asyncio
 from typing import Dict
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -53,26 +54,38 @@ def generate_uuid_from_id(id_str: str) -> uuid.UUID:
     """Generate a UUID from a string identifier."""
     return uuid.uuid5(uuid.NAMESPACE_DNS, id_str)
 
-def get_collection_name(agent_id: str, client_id: str, chat_id: str) -> str:
-    """Generate a unique collection name for memory storage"""
-    collection_base = f"{agent_id}-{client_id}-{chat_id}"
-    sanitized = ''.join(c if c.isalnum() else '-' for c in collection_base)
-    if not sanitized[0].isalpha():
-        sanitized = 'id-' + sanitized
-    if len(sanitized) < 3:
-        sanitized = sanitized + '-collection'
-    elif len(sanitized) > 63:
-        sanitized = sanitized[:60] + '-col'
-    return sanitized
+def get_collection_name(agent_id: str, user_id: str, chat_id: str = None) -> str:
+    
+    if not chat_id:
+        chat_id = user_id
+    
+    if agent_id:
+        base_name = f"{agent_id}-{user_id[:8]}-{chat_id[:8]}"
+    else:
+        base_name = f"id-{user_id[:8]}-{chat_id[:8]}"
+    
+    collection_name = f"{base_name}-col"
+    
+    return sanitize_collection_name(collection_name)
 
-def sanitize_collection_name(id_str: str) -> str:
-    sanitized = ''.join(c if c.isalnum() else '-' for c in id_str)
-    if not sanitized[0].isalpha():
-        sanitized = 'id-' + sanitized
+def sanitize_collection_name(name: str) -> str:
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
+    
+    sanitized = re.sub(r'-+', '-', sanitized)
+    
+    sanitized = re.sub(r'^[^a-zA-Z0-9]+', '', sanitized)
+    sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
+    
     if len(sanitized) < 3:
-        sanitized = sanitized + '-collection'
-    elif len(sanitized) > 63:
-        sanitized = sanitized[:60] + '-col'
+        sanitized = 'default-collection'
+    
+    if len(sanitized) > 63:
+        sanitized = sanitized[:63]
+        sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
+    
+    if not re.match(r'^[a-zA-Z0-9].*[a-zA-Z0-9]$', sanitized):
+        sanitized = 'collection-' + str(uuid.uuid4())[:8]
+    
     return sanitized
 
 class ChannelLockManager:
