@@ -4,7 +4,7 @@ import os
 import yaml
 import uuid
 import asyncio
-from typing import Dict
+from typing import Dict, Optional
 import re
 import hashlib
 
@@ -55,7 +55,7 @@ def generate_uuid_from_id(id_str: str) -> uuid.UUID:
     """Generate a UUID from a string identifier."""
     return uuid.uuid5(uuid.NAMESPACE_DNS, id_str)
 
-def get_collection_name(agent_id: str, user_id: str, chat_id: str = None) -> str:
+def get_collection_name(agent_id: str, user_id: str, chat_id: Optional[str] = None) -> str:
     
     if not chat_id:
         chat_id = user_id
@@ -70,22 +70,20 @@ def get_collection_name(agent_id: str, user_id: str, chat_id: str = None) -> str
     return sanitize_collection_name(collection_name)
 
 def sanitize_collection_name(name: str) -> str:
+    MAX_LENGTH = 63
     
-    hash_obj = hashlib.md5(name.encode())
-    hash_str = hash_obj.hexdigest()[:16] 
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
+    sanitized = re.sub(r'-+', '-', sanitized)
+    sanitized = re.sub(r'^[^a-zA-Z0-9]+', '', sanitized)
+    sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
     
-    prefix = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
-    prefix = re.sub(r'-+', '-', prefix)
-    prefix = re.sub(r'^[^a-zA-Z0-9]+', '', prefix)
-    prefix = re.sub(r'[^a-zA-Z0-9]+$', '', prefix)
+    if len(sanitized) < 3 or not re.match(r'^[a-zA-Z0-9].*[a-zA-Z0-9]$', sanitized):
+        sanitized = f"col-{sanitized}"
     
-    sanitized = f"{prefix}-{hash_str}"
-    
-    if len(prefix) < 3:
-        sanitized = f"col-{hash_str}"
-    
-    if not re.match(r'^[a-zA-Z0-9].*[a-zA-Z0-9]$', sanitized):
-        sanitized = f"col-{hash_str}"
+    if len(sanitized) > MAX_LENGTH:
+        hash_obj = hashlib.sha256(name.encode())
+        hash_str = hash_obj.hexdigest()[:MAX_LENGTH] 
+        sanitized = f"c-{hash_str}" 
     
     return sanitized
 

@@ -17,13 +17,13 @@ class OpenAIMessageContext(MessageContext):
     stream: bool = False
 
 class OpenAIClient(BaseClient):
-    def __init__(self, api_key: str = None, host: str = "0.0.0.0", port: int = 8000):
+    def __init__(self, api_key: str = "", host: str = "0.0.0.0", port: int = 8000):
         self.api_key = api_key
         self.host = host
         self.port = port
         self.app = FastAPI()
         self.security = HTTPBearer(auto_error=False)
-        self.message_queue = asyncio.Queue()
+        self.message_queue: asyncio.Queue[OpenAIMessageContext] = asyncio.Queue()
         self.response_queues: Dict[str, asyncio.Queue] = {}
         
         self._setup_routes()
@@ -39,7 +39,7 @@ class OpenAIClient(BaseClient):
             stream = request_data.get("stream", False)
             
             request_id = str(uuid.uuid4())
-            response_queue = asyncio.Queue()
+            response_queue: asyncio.Queue = asyncio.Queue()
             self.response_queues[request_id] = response_queue
             
             ctx = OpenAIMessageContext(
@@ -116,7 +116,7 @@ class OpenAIClient(BaseClient):
             print(f"Error receiving message: {e}")
             return None
     
-    async def send_message(self, ctx: OpenAIMessageContext, reply_messages: List[Message]):
+    async def send_message(self, ctx: MessageContext, reply_messages: List[Message]):
         """Send a response back to the client"""
         if not isinstance(ctx, OpenAIMessageContext):
             raise ValueError("Context must be an OpenAIMessageContext")
@@ -148,7 +148,7 @@ class OpenAIClient(BaseClient):
             
             await response_queue.put(None)
         else:
-            combined_text = "".join([msg.content for msg in reply_messages])
+            combined_text = "".join([msg.content or "" for msg in reply_messages])
             
             response_data = {
                 "id": f"cmpl-{uuid.uuid4()}",
