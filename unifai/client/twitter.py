@@ -94,7 +94,7 @@ class TwitterClient(BaseClient):
     async def receive_message(self) -> Optional[TwitterMessageContext]:
         """Receive a message from the queue"""
         try:
-            return await asyncio.wait_for(self._message_queue.get(), timeout=0.1)
+            return await asyncio.wait_for(self._message_queue.get())
         except asyncio.TimeoutError:
             return None
 
@@ -134,7 +134,7 @@ class TwitterClient(BaseClient):
                 tweets_resp = self.client.search_recent_tweets(
                     query=query,
                     expansions=["author_id"],
-                    tweet_fields=["author_id", "text"],
+                    tweet_fields=["author_id", "text", "conversation_id"],
                     user_fields=["username", "name", "description"],
                     start_time=start_time if not since_id else None,
                     since_id=since_id,
@@ -160,7 +160,7 @@ class TwitterClient(BaseClient):
                         
                         ctx = TwitterMessageContext(
                             tweet_id=str(tweet.id),
-                            chat_id=str(tweet.id),  
+                            chat_id=str(tweet.conversation_id),
                             user_id=str(tweet.author_id),
                             username=author.username,
                             message=tweet.text,

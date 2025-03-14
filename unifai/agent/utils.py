@@ -6,6 +6,7 @@ import uuid
 import asyncio
 from typing import Dict
 import re
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -60,31 +61,31 @@ def get_collection_name(agent_id: str, user_id: str, chat_id: str = None) -> str
         chat_id = user_id
     
     if agent_id:
-        base_name = f"{agent_id}-{user_id[:8]}-{chat_id[:8]}"
+        base_name = f"{agent_id}-{user_id}-{chat_id}"
     else:
-        base_name = f"id-{user_id[:8]}-{chat_id[:8]}"
+        base_name = f"id-{user_id}-{chat_id}"
     
     collection_name = f"{base_name}-col"
     
     return sanitize_collection_name(collection_name)
 
 def sanitize_collection_name(name: str) -> str:
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
     
-    sanitized = re.sub(r'-+', '-', sanitized)
+    hash_obj = hashlib.md5(name.encode())
+    hash_str = hash_obj.hexdigest()[:16] 
     
-    sanitized = re.sub(r'^[^a-zA-Z0-9]+', '', sanitized)
-    sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
+    prefix = re.sub(r'[^a-zA-Z0-9_-]', '-', name)
+    prefix = re.sub(r'-+', '-', prefix)
+    prefix = re.sub(r'^[^a-zA-Z0-9]+', '', prefix)
+    prefix = re.sub(r'[^a-zA-Z0-9]+$', '', prefix)
     
-    if len(sanitized) < 3:
-        sanitized = 'default-collection'
+    sanitized = f"{prefix}-{hash_str}"
     
-    if len(sanitized) > 63:
-        sanitized = sanitized[:63]
-        sanitized = re.sub(r'[^a-zA-Z0-9]+$', '', sanitized)
+    if len(prefix) < 3:
+        sanitized = f"col-{hash_str}"
     
     if not re.match(r'^[a-zA-Z0-9].*[a-zA-Z0-9]$', sanitized):
-        sanitized = 'collection-' + str(uuid.uuid4())[:8]
+        sanitized = f"col-{hash_str}"
     
     return sanitized
 
