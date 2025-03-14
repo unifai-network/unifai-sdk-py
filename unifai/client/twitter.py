@@ -50,7 +50,7 @@ class TwitterClient(BaseClient):
         self.poll_interval = poll_interval
         
         self._started = False
-        self._message_queue = asyncio.Queue()
+        self._message_queue: asyncio.Queue[TwitterMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
         self._polling_task = None
         
@@ -94,7 +94,7 @@ class TwitterClient(BaseClient):
     async def receive_message(self) -> Optional[TwitterMessageContext]:
         """Receive a message from the queue"""
         try:
-            return await asyncio.wait_for(self._message_queue.get())
+            return await asyncio.wait_for(self._message_queue.get(), timeout=None)
         except asyncio.TimeoutError:
             return None
 

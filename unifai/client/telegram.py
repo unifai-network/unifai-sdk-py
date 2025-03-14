@@ -33,7 +33,7 @@ class TelegramClient(BaseClient):
         self.bot_name = ""
         self._application = None
         self._started = False
-        self._message_queue = asyncio.Queue()
+        self._message_queue: asyncio.Queue[TelegramMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
 
     @property
