@@ -314,7 +314,7 @@ class Agent:
         )
 
         model = self.get_model("default") or ""
-        anthropic_cache_control = "anthropic" in model.lower()
+        anthropic_cache_control = model.lower().startswith("anthropic")
 
         system_prompt = self.get_prompt("agent.system").format(
             date=datetime.now().strftime("%Y-%m-%d"),
