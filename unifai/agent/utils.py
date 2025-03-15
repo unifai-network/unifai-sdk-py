@@ -82,7 +82,7 @@ def sanitize_collection_name(name: str) -> str:
     
     if len(sanitized) > MAX_LENGTH:
         hash_obj = hashlib.sha256(name.encode())
-        hash_str = hash_obj.hexdigest()[:MAX_LENGTH] 
+        hash_str = hash_obj.hexdigest()[:MAX_LENGTH-2] 
         sanitized = f"c-{hash_str}" 
     
     return sanitized

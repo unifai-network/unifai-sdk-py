@@ -234,8 +234,8 @@ class Agent:
         
         for client in self._clients.values():
             try:
-                await client.stop()
                 logger.info(f"Stopped client: {client.client_id}")
+                await client.stop()
             except Exception as e:
                 logger.error(f"Failed to stop client {client.client_id}: {e}")
         
@@ -345,7 +345,7 @@ class Agent:
 
         if anthropic_cache_control:
             system_messages[-1]["cache_control"] = { "type": "ephemeral" }
-        messages: List[Dict | Message] = [{"role": "system", "content": system_messages}]
+        messages: List = [{"role": "system", "content": system_messages}]
 
         if recent_memories:
             recent_interactions = sorted(
@@ -389,7 +389,7 @@ class Agent:
             ]
         }
         tool_infos_collection = []
-        reply_messages: List[Message] = []
+        reply_messages = []
         
         sent_using_tools = False
         while True:
@@ -428,10 +428,10 @@ class Agent:
             if not assistant_message.tool_calls:
                 break
 
-            if not sent_using_tools:
+            if ctx.progress_report and not sent_using_tools:
                 await client.send_message(ctx, [Message(
                     role="assistant",
-                    content="Working on it...",
+                    content="I'm working on it...",
                 )])
                 sent_using_tools = True
 

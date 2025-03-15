@@ -1,13 +1,11 @@
 import asyncio
 import logging
 import datetime
-import os
-import tempfile
 import time
 import tweepy
 from dataclasses import dataclass
 from functools import wraps
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
 from .base import BaseClient, MessageContext, Message
 
@@ -143,7 +141,7 @@ class TwitterClient(BaseClient):
                 
                 current_wait_time = base_wait_time
                 
-                if tweets_resp.data:
+                if isinstance(tweets_resp, tweepy.Response) and tweets_resp.data:
                     users = {user.id: user for user in tweets_resp.includes['users']}
                     
                     for tweet in reversed(tweets_resp.data):
@@ -152,6 +150,9 @@ class TwitterClient(BaseClient):
                             continue
                             
                         author = users.get(tweet.author_id)
+
+                        if not author:
+                            continue
                         
                         if author.username.lower() == self.bot_screen_name.lower():
                             continue
@@ -164,7 +165,8 @@ class TwitterClient(BaseClient):
                             user_id=str(tweet.author_id),
                             username=author.username,
                             message=tweet.text,
-                            author_name=author.name
+                            author_name=author.name,
+                            progress_report=False,
                         )
                         
                         await self._message_queue.put(ctx)

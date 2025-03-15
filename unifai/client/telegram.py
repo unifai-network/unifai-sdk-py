@@ -2,7 +2,7 @@ import asyncio
 import logging
 from functools import wraps
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from telegram import Update, LinkPreviewOptions, User, Chat
 from telegram.ext import ApplicationBuilder, ContextTypes, filters, MessageHandler
 from .base import BaseClient, MessageContext, Message
@@ -133,5 +133,6 @@ class TelegramClient(BaseClient):
             message=message,
             message_id=update.message.message_id,
             update=update,
+            progress_report=True,
         )
         await self._message_queue.put(ctx)
