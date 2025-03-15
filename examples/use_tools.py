@@ -1,12 +1,12 @@
+import dotenv
+dotenv.load_dotenv()
+
 import asyncio
 import os
 import sys
 import litellm
 import unifai
 from typing import List
-
-import dotenv
-dotenv.load_dotenv()
 
 tools = unifai.Tools(api_key=os.getenv("UNIFAI_AGENT_API_KEY", ""))
 
