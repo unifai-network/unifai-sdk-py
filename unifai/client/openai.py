@@ -3,6 +3,7 @@ import json
 import time
 import uuid
 import asyncio
+import logging
 from dataclasses import dataclass
 from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,20 +12,23 @@ import uvicorn
 
 from .base import BaseClient, Message, MessageContext
 
+logger = logging.getLogger(__name__)
+
 @dataclass
 class OpenAIMessageContext(MessageContext):
     request_data: Dict[str, Any]
     stream: bool = False
 
 class OpenAIClient(BaseClient):
-    def __init__(self, api_key: str = "", host: str = "0.0.0.0", port: int = 8000):
-        self.api_key = api_key
+    def __init__(self, host: str = "0.0.0.0", port: int = 8000):
         self.host = host
         self.port = port
         self.app = FastAPI()
         self.security = HTTPBearer(auto_error=False)
         self.message_queue: asyncio.Queue[OpenAIMessageContext] = asyncio.Queue()
         self.response_queues: Dict[str, asyncio.Queue] = {}
+        self.server = None
+        self.server_task = None
         
         self._setup_routes()
     
@@ -35,6 +39,9 @@ class OpenAIClient(BaseClient):
     def _setup_routes(self):
         @self.app.post("/v1/completions")
         async def completions(request: Request, credentials: HTTPAuthorizationCredentials = Depends(self.security)):
+            if not await self.verify_credentials(credentials):
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
             request_data = await request.json()
             stream = request_data.get("stream", False)
             
@@ -47,7 +54,8 @@ class OpenAIClient(BaseClient):
                 user_id=request_id,
                 message=request_data.get("prompt", ""),
                 request_data=request_data,
-                stream=stream
+                stream=stream,
+                progress_report=False,
             )
             
             await self.message_queue.put(ctx)
@@ -75,7 +83,7 @@ class OpenAIClient(BaseClient):
             if request_id in self.response_queues:
                 del self.response_queues[request_id]
     
-    def _verify_api_key(self, credentials: HTTPAuthorizationCredentials):
+    async def verify_credentials(self, credentials: HTTPAuthorizationCredentials):
         return True
     
     async def start(self):
@@ -88,32 +96,36 @@ class OpenAIClient(BaseClient):
         )
         self.server = uvicorn.Server(config)
         self.server.config.setup_event_loop()
-        
-        @self.app.on_event("shutdown")
-        async def shutdown_event():
-            print("The server is shutting down...")
-        
         self.server_task = asyncio.create_task(self.server.serve())
     
     async def stop(self):
-        if hasattr(self, 'server'):
+        if self.server is not None:
             self.server.should_exit = True
-            if hasattr(self, 'server_task') and not self.server_task.done():
+            
+            if self.server_task is not None and not self.server_task.done():
+                self.server_task.cancel()
                 try:
-                    await asyncio.wait_for(self.server_task, timeout=2.0)
-                except asyncio.TimeoutError:
-                    self.server_task.cancel()
-                    try:
-                        await self.server_task
-                    except asyncio.CancelledError:
-                        pass
+                    await self.server_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error during server shutdown: {e}")
+            
+            for request_id in list(self.response_queues.keys()):
+                if request_id in self.response_queues:
+                    await self.response_queues[request_id].put(None)
+                    del self.response_queues[request_id]
     
     async def receive_message(self) -> Optional[OpenAIMessageContext]:
         """Receive a message from the queue"""
         try:
-            return await self.message_queue.get()
+            return await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            return None
+        except asyncio.CancelledError:
+            return None
         except Exception as e:
-            print(f"Error receiving message: {e}")
+            logger.error(f"Error receiving message: {e}")
             return None
     
     async def send_message(self, ctx: MessageContext, reply_messages: List[Message]):
@@ -127,14 +139,21 @@ class OpenAIClient(BaseClient):
         
         response_queue = self.response_queues[request_id]
         
+        reply_messages = [reply_messages[-1]] if reply_messages else []
+        
+        completion_id = f"cmpl-{uuid.uuid4()}"
+        system_fingerprint = f"fp_{uuid.uuid4().hex[:11]}"
+        model = ctx.request_data.get("model", "default")
+        created_timestamp = int(time.time())
+
         if ctx.stream:
             for i, message in enumerate(reply_messages):
                 chunk = {
-                    "id": f"cmpl-{uuid.uuid4()}",
+                    "id": completion_id,
                     "object": "text_completion",
-                    "created": int(time.time()),
-                    "model": ctx.request_data.get("model", "default"),
-                    "system_fingerprint": f"fp_{uuid.uuid4().hex[:11]}",
+                    "created": created_timestamp,
+                    "model": model,
+                    "system_fingerprint": system_fingerprint,
                     "choices": [
                         {
                             "text": message.content,
@@ -151,11 +170,11 @@ class OpenAIClient(BaseClient):
             combined_text = "".join([msg.content or "" for msg in reply_messages])
             
             response_data = {
-                "id": f"cmpl-{uuid.uuid4()}",
+                "id": completion_id,
                 "object": "text_completion",
-                "created": int(time.time()),
-                "model": ctx.request_data.get("model", "default"),
-                "system_fingerprint": f"fp_{uuid.uuid4().hex[:11]}",
+                "created": created_timestamp,
+                "model": model,
+                "system_fingerprint": system_fingerprint,
                 "choices": [
                     {
                         "text": combined_text,
@@ -171,4 +190,4 @@ class OpenAIClient(BaseClient):
                 }
             }
             
-            await response_queue.put(response_data) 
+            await response_queue.put(response_data)

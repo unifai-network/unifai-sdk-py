@@ -18,11 +18,15 @@ class API:
         method: str,
         path: str, 
         timeout: float = 10.0,
-        headers: Dict[str, Any] = {},
+        headers: Dict[str, Any] | None = None,
         **kwargs,
     ) -> Dict[str, Any]:
+        if headers is None:
+            headers = {}
+
         if 'Authorization' not in headers and self.api_key:
             headers['Authorization'] = self.api_key
+
         response = await self.client.request(
             method,
             f"{self.api_uri}{path}", 
@@ -30,5 +34,7 @@ class API:
             timeout=timeout,
             **kwargs,
         )
+
         response.raise_for_status()
+
         return response.json()

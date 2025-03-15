@@ -1,16 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import List, Any, Dict, Optional
+from typing import List, Optional
 from dataclasses import dataclass
-import litellm
+from litellm.types.utils import Message as LitellmMessage
 
-class Message(litellm.types.utils.Message):
-    pass
+class Message(LitellmMessage):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 @dataclass
 class MessageContext(ABC):
     chat_id: str
     user_id: str
     message: str
+    progress_report: bool
 
 class BaseClient(ABC):
     @property
