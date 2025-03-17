@@ -2,25 +2,38 @@ from typing import List, Dict, Any, Optional, AsyncGenerator
 import json
 import time
 import uuid
+import litellm
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
+from dotenv import load_dotenv
 
 from .base import BaseClient, Message, MessageContext
+from unifai.tools import Tools
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class OpenAIMessageContext(MessageContext):
+    chat_id: str
+    user_id: str
+    message: str
+    progress_report: bool
+    
     request_data: Dict[str, Any]
-    stream: bool = False
+    
+    use_agent_system_prompt: bool = False
+    include_tool_history: bool = False
 
 class OpenAIClient(BaseClient):
-    def __init__(self, host: str = "0.0.0.0", port: int = 8000):
+    def __init__(self, host: str = "0.0.0.0", port: int = 8000, api_key: str = None):
         self.host = host
         self.port = port
         self.app = FastAPI()
@@ -29,6 +42,8 @@ class OpenAIClient(BaseClient):
         self.response_queues: Dict[str, asyncio.Queue] = {}
         self.server = None
         self.server_task = None
+        
+        self.api_key = api_key or os.getenv("UNIFAI_API_KEY")
         
         self._setup_routes()
     
@@ -42,53 +57,149 @@ class OpenAIClient(BaseClient):
             if not await self.verify_credentials(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
 
-            request_data = await request.json()
-            stream = request_data.get("stream", False)
-            
-            request_id = str(uuid.uuid4())
-            response_queue: asyncio.Queue = asyncio.Queue()
-            self.response_queues[request_id] = response_queue
-            
-            messages = request_data.get("messages", [])
-            user_message = ""
-            for msg in reversed(messages):
-                if msg.get("role") == "user":
-                    user_message = msg.get("content", "")
-                    break
-            
-            ctx = OpenAIMessageContext(
-                chat_id=request_id,
-                user_id=request_id,
-                message=user_message,
-                request_data=request_data,
-                stream=stream,
-                progress_report=False,
-            )
-            
-            await self.message_queue.put(ctx)
-            
-            if stream:
-                return StreamingResponse(
-                    self._stream_response(request_id, request_data),
-                    media_type="text/event-stream"
+            try:
+                request_data = await request.json()
+                
+                use_agent_system_prompt = request_data.get("use_agent_system_prompt", False)
+                include_tool_history = request_data.get("include_tool_history", False)
+                progress_report = request_data.get("progress_report", False)
+                
+                request_id = str(uuid.uuid4())
+                
+                messages = request_data.get("messages", [])
+                user_message = ""
+                system_message = None
+                
+                for msg in messages:
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                    elif msg.get("role") == "system":
+                        system_message = msg.get("content", "")
+                
+                model_messages = []
+                
+                if use_agent_system_prompt:
+                    from unifai.agent import Agent
+                    system_prompt = Agent("").get_prompt("agent.system")
+                    model_messages.append({"content": system_prompt, "role": "system"})
+                elif system_message:
+                    model_messages.append({"content": system_message, "role": "system"})
+                
+                if user_message:
+                    model_messages.append({"content": user_message, "role": "user"})
+                
+                tools_data = request_data.get("tools", [])
+                
+                ctx = OpenAIMessageContext(
+                    chat_id=request_id,
+                    user_id=request_id,
+                    message=user_message,
+                    progress_report=progress_report,
+                    request_data=request_data,
+                    use_agent_system_prompt=use_agent_system_prompt,
+                    include_tool_history=include_tool_history,
                 )
-            else:
-                response_data = await response_queue.get()
+                
+                tools = Tools(api_key=self.api_key)
+                
+                completion_id = f"chatcmpl-{uuid.uuid4()}"
+                system_fingerprint = f"fp_{uuid.uuid4().hex[:11]}"
+                model = request_data.get("model", "default")
+                created_timestamp = int(time.time())
+                
+                all_messages = model_messages.copy()
+                result_messages = []
+                
+                model_name = request_data.get("model", "anthropic/claude-3-7-sonnet-20250219")
+                
+                
+                
+                while True:
+                    response = await litellm.acompletion(
+                        model=model_name,
+                        messages=all_messages,
+                        tools=tools_data if tools_data else None,
+                    )
+                    
+                    message = response.choices[0].message
+                    result_messages.append(message)
+                    
+                    all_messages.append(message)
+                    
+                    if not message.tool_calls:
+                        break
+                    
+                    if tools_data:
+                        results = await tools.call_tools(message.tool_calls)
+                        
+                        if len(results) == 0:
+                            break
+                        
+                        all_messages.extend(results)
+                        result_messages.extend(results)
+                
+                final_messages = result_messages if include_tool_history else [result_messages[-1]]
+                
+                prompt_tokens = len(user_message) // 4
+                completion_tokens = sum(len(msg.content or "") if hasattr(msg, "content") else len(msg.get("content", "")) for msg in final_messages) // 4
+                total_tokens = prompt_tokens + completion_tokens
+                
+                choices = []
+                for i, message in enumerate(final_messages):
+                    content = message.content if hasattr(message, "content") else message.get("content", "")
+                    
+                    # Handle tool_calls serialization
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        # Convert tool_calls objects to dictionaries
+                        serialized_tool_calls = []
+                        for tool_call in message.tool_calls:
+                            # Create a serializable dictionary from the tool_call object
+                            tool_call_dict = {
+                                "id": tool_call.id if hasattr(tool_call, "id") else str(uuid.uuid4()),
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call.function.name if hasattr(tool_call.function, "name") else "",
+                                    "arguments": tool_call.function.arguments if hasattr(tool_call.function, "arguments") else "{}"
+                                }
+                            }
+                            serialized_tool_calls.append(tool_call_dict)
+                    elif isinstance(message, dict) and message.get("tool_calls"):
+                        # If it's already a dictionary, use it directly
+                        serialized_tool_calls = message.get("tool_calls")
+                    else:
+                        serialized_tool_calls = None
+                    
+                    choices.append({
+                        "index": i,
+                        "message": {
+                            "role": "assistant",
+                            "content": content or "",
+                            "function_call": None,
+                            "tool_calls": serialized_tool_calls
+                        },
+                        "logprobs": None,
+                        "finish_reason": "stop" if i == len(final_messages) - 1 else "tool_calls"
+                    })
+                
+                response_data = {
+                    "id": completion_id,
+                    "object": "chat.completion",
+                    "created": created_timestamp,
+                    "model": model,
+                    "choices": choices,
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens
+                    },
+                    "system_fingerprint": system_fingerprint,
+                    "warning": None
+                }
+                
                 return Response(content=json.dumps(response_data), media_type="application/json")
-    
-    async def _stream_response(self, request_id: str, request_data: Dict[str, Any]) -> AsyncGenerator[str, None]:
-        response_queue = self.response_queues[request_id]
-        
-        try:
-            while True:
-                chunk = await response_queue.get()
-                if chunk is None: 
-                    break
-                yield f"data: {json.dumps(chunk)}\n\n"
-            yield "data: [DONE]\n\n"
-        finally:
-            if request_id in self.response_queues:
-                del self.response_queues[request_id]
+            except Exception as e:
+                logger.error(f"Error in chat_completions: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
     
     async def verify_credentials(self, credentials: HTTPAuthorizationCredentials):
         return True
@@ -124,129 +235,7 @@ class OpenAIClient(BaseClient):
                     del self.response_queues[request_id]
     
     async def receive_message(self) -> Optional[OpenAIMessageContext]:
-        """Receive a message from the queue"""
-        try:
-            return await asyncio.wait_for(self.message_queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
-            return None
-        except asyncio.CancelledError:
-            return None
-        except Exception as e:
-            logger.error(f"Error receiving message: {e}")
-            return None
+        pass
     
     async def send_message(self, ctx: MessageContext, reply_messages: List[Message]):
-        """Send a response back to the client"""
-        if not isinstance(ctx, OpenAIMessageContext):
-            raise ValueError("Context must be an OpenAIMessageContext")
-        
-        request_id = ctx.chat_id
-        if request_id not in self.response_queues:
-            return
-        
-        response_queue = self.response_queues[request_id]
-        
-        reply_messages = [reply_messages[-1]] if reply_messages else []
-        
-        completion_id = f"chatcmpl-{uuid.uuid4()}"
-        system_fingerprint = f"fp_{uuid.uuid4().hex[:11]}"
-        model = ctx.request_data.get("model", "default")
-        created_timestamp = int(time.time())
-        n = min(ctx.request_data.get("n", 1), len(reply_messages) or 1)
-        
-        if ctx.stream:
-            for i in range(n):
-                message = reply_messages[i] if i < len(reply_messages) else reply_messages[0]
-                
-                first_chunk = {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_timestamp,
-                    "model": model,
-                    "system_fingerprint": system_fingerprint,
-                    "choices": [
-                        {
-                            "index": i,
-                            "delta": {
-                                "role": "assistant"
-                            },
-                            "logprobs": None,
-                            "finish_reason": None
-                        }
-                    ]
-                }
-                await response_queue.put(first_chunk)
-                
-                content_chunk = {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_timestamp,
-                    "model": model,
-                    "system_fingerprint": system_fingerprint,
-                    "choices": [
-                        {
-                            "index": i,
-                            "delta": {
-                                "content": message.content or ""
-                            },
-                            "logprobs": None,
-                            "finish_reason": None
-                        }
-                    ]
-                }
-                await response_queue.put(content_chunk)
-                
-                final_chunk = {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_timestamp,
-                    "model": model,
-                    "system_fingerprint": system_fingerprint,
-                    "choices": [
-                        {
-                            "index": i,
-                            "delta": {},
-                            "logprobs": None,
-                            "finish_reason": "stop"
-                        }
-                    ]
-                }
-                await response_queue.put(final_chunk)
-            
-            await response_queue.put(None)
-        else:
-            choices = []
-            for i in range(n):
-                message = reply_messages[i] if i < len(reply_messages) else reply_messages[0]
-                choices.append({
-                    "index": i,
-                    "message": {
-                        "role": "assistant",
-                        "content": message.content or "",
-                        "function_call": None,
-                        "tool_calls": None
-                    },
-                    "logprobs": None,
-                    "finish_reason": "stop"
-                })
-            
-            prompt_tokens = len(ctx.message) // 4
-            completion_tokens = sum(len(msg.content or "") for msg in reply_messages[:n]) // 4
-            total_tokens = prompt_tokens + completion_tokens
-            
-            response_data = {
-                "id": completion_id,
-                "object": "chat.completion",
-                "created": created_timestamp,
-                "model": model,
-                "choices": choices,
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": total_tokens
-                },
-                "system_fingerprint": system_fingerprint,
-                "warning": None
-            }
-            
-            await response_queue.put(response_data)
+        pass
