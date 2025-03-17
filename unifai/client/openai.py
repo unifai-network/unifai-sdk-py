@@ -37,8 +37,8 @@ class OpenAIClient(BaseClient):
         return "openai"
     
     def _setup_routes(self):
-        @self.app.post("/v1/completions")
-        async def completions(request: Request, credentials: HTTPAuthorizationCredentials = Depends(self.security)):
+        @self.app.post("/v1/chat/completions")
+        async def chat_completions(request: Request, credentials: HTTPAuthorizationCredentials = Depends(self.security)):
             if not await self.verify_credentials(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -49,10 +49,17 @@ class OpenAIClient(BaseClient):
             response_queue: asyncio.Queue = asyncio.Queue()
             self.response_queues[request_id] = response_queue
             
+            messages = request_data.get("messages", [])
+            user_message = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_message = msg.get("content", "")
+                    break
+            
             ctx = OpenAIMessageContext(
                 chat_id=request_id,
                 user_id=request_id,
-                message=request_data.get("prompt", ""),
+                message=user_message,
                 request_data=request_data,
                 stream=stream,
                 progress_report=False,
@@ -141,24 +148,26 @@ class OpenAIClient(BaseClient):
         
         reply_messages = [reply_messages[-1]] if reply_messages else []
         
-        completion_id = f"cmpl-{uuid.uuid4()}"
+        completion_id = f"chatcmpl-{uuid.uuid4()}"
         system_fingerprint = f"fp_{uuid.uuid4().hex[:11]}"
         model = ctx.request_data.get("model", "default")
         created_timestamp = int(time.time())
-
+        
         if ctx.stream:
             for i, message in enumerate(reply_messages):
                 chunk = {
                     "id": completion_id,
-                    "object": "text_completion",
+                    "object": "chat.completion.chunk",
                     "created": created_timestamp,
                     "model": model,
                     "system_fingerprint": system_fingerprint,
                     "choices": [
                         {
-                            "text": message.content,
-                            "index": i,
-                            "logprobs": None,
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": message.content
+                            },
                             "finish_reason": "stop" if i == len(reply_messages) - 1 else None
                         }
                     ]
@@ -171,15 +180,17 @@ class OpenAIClient(BaseClient):
             
             response_data = {
                 "id": completion_id,
-                "object": "text_completion",
+                "object": "chat.completion",
                 "created": created_timestamp,
                 "model": model,
                 "system_fingerprint": system_fingerprint,
                 "choices": [
                     {
-                        "text": combined_text,
                         "index": 0,
-                        "logprobs": None,
+                        "message": {
+                            "role": "assistant",
+                            "content": combined_text
+                        },
                         "finish_reason": "stop"
                     }
                 ],
