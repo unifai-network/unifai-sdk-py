@@ -152,10 +152,13 @@ class OpenAIClient(BaseClient):
         system_fingerprint = f"fp_{uuid.uuid4().hex[:11]}"
         model = ctx.request_data.get("model", "default")
         created_timestamp = int(time.time())
+        n = min(ctx.request_data.get("n", 1), len(reply_messages) or 1)
         
         if ctx.stream:
-            for i, message in enumerate(reply_messages):
-                chunk = {
+            for i in range(n):
+                message = reply_messages[i] if i < len(reply_messages) else reply_messages[0]
+                
+                first_chunk = {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
                     "created": created_timestamp,
@@ -163,42 +166,87 @@ class OpenAIClient(BaseClient):
                     "system_fingerprint": system_fingerprint,
                     "choices": [
                         {
-                            "index": 0,
+                            "index": i,
                             "delta": {
-                                "role": "assistant",
-                                "content": message.content
+                                "role": "assistant"
                             },
-                            "finish_reason": "stop" if i == len(reply_messages) - 1 else None
+                            "logprobs": None,
+                            "finish_reason": None
                         }
                     ]
                 }
-                await response_queue.put(chunk)
+                await response_queue.put(first_chunk)
+                
+                content_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_timestamp,
+                    "model": model,
+                    "system_fingerprint": system_fingerprint,
+                    "choices": [
+                        {
+                            "index": i,
+                            "delta": {
+                                "content": message.content or ""
+                            },
+                            "logprobs": None,
+                            "finish_reason": None
+                        }
+                    ]
+                }
+                await response_queue.put(content_chunk)
+                
+                final_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_timestamp,
+                    "model": model,
+                    "system_fingerprint": system_fingerprint,
+                    "choices": [
+                        {
+                            "index": i,
+                            "delta": {},
+                            "logprobs": None,
+                            "finish_reason": "stop"
+                        }
+                    ]
+                }
+                await response_queue.put(final_chunk)
             
             await response_queue.put(None)
         else:
-            combined_text = "".join([msg.content or "" for msg in reply_messages])
+            choices = []
+            for i in range(n):
+                message = reply_messages[i] if i < len(reply_messages) else reply_messages[0]
+                choices.append({
+                    "index": i,
+                    "message": {
+                        "role": "assistant",
+                        "content": message.content or "",
+                        "function_call": None,
+                        "tool_calls": None
+                    },
+                    "logprobs": None,
+                    "finish_reason": "stop"
+                })
+            
+            prompt_tokens = len(ctx.message) // 4
+            completion_tokens = sum(len(msg.content or "") for msg in reply_messages[:n]) // 4
+            total_tokens = prompt_tokens + completion_tokens
             
             response_data = {
                 "id": completion_id,
                 "object": "chat.completion",
                 "created": created_timestamp,
                 "model": model,
-                "system_fingerprint": system_fingerprint,
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": combined_text
-                        },
-                        "finish_reason": "stop"
-                    }
-                ],
+                "choices": choices,
                 "usage": {
-                    "prompt_tokens": len(ctx.message) // 4, 
-                    "completion_tokens": len(combined_text) // 4, 
-                    "total_tokens": (len(ctx.message) + len(combined_text)) // 4 
-                }
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens
+                },
+                "system_fingerprint": system_fingerprint,
+                "warning": None
             }
             
             await response_queue.put(response_data)
