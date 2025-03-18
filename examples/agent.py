@@ -4,13 +4,10 @@ dotenv.load_dotenv()
 import os
 
 import unifai
-from unifai.client import TelegramClient, TwitterClient, OpenAIClient
+from unifai.client import TelegramClient, TwitterClient
 
 if __name__ == '__main__':
     agent = unifai.Agent(api_key=os.getenv("UNIFAI_AGENT_API_KEY", ""))
-
-    openai_client = OpenAIClient()
-    agent.add_client(openai_client)
 
     if os.getenv("TELEGRAM_BOT_TOKEN"):
         telegram_client = TelegramClient(bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""))
