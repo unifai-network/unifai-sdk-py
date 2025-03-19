@@ -39,6 +39,8 @@ class TwitterClient(BaseClient):
         bot_screen_name: str,
         poll_interval: int = 20,
         max_message_length: int = 280,
+        respond_to_mentions: bool = True,
+        respond_to_replies: bool = False,
     ):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -48,6 +50,8 @@ class TwitterClient(BaseClient):
         self.bot_screen_name = bot_screen_name
         self.poll_interval = poll_interval
         self.max_message_length = max_message_length
+        self.respond_to_mentions = respond_to_mentions
+        self.respond_to_replies = respond_to_replies
         self._started = False
         self._message_queue: asyncio.Queue[TwitterMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
@@ -122,7 +126,17 @@ class TwitterClient(BaseClient):
         """Poll for mentions and add them to the queue"""
         start_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=10)
         since_id = None
-        query = f"(@{self.bot_screen_name} OR to:{self.bot_screen_name}) -is:retweet -is:quote"
+
+        query_parts = []
+        if self.respond_to_mentions:
+            query_parts.append(f"@{self.bot_screen_name}")
+        if self.respond_to_replies:
+            query_parts.append(f"to:{self.bot_screen_name}")
+
+        if query_parts:
+            query = f"({' OR '.join(query_parts)}) -is:retweet -is:quote"
+        else:
+            return
         
         base_wait_time = self.poll_interval
         max_wait_time = base_wait_time
