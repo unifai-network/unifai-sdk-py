@@ -37,7 +37,8 @@ class TwitterClient(BaseClient):
         access_secret: str,
         bearer_token: str,
         bot_screen_name: str,
-        poll_interval: int = 20
+        poll_interval: int = 20,
+        max_message_length: int = 280,
     ):
         self.api_key = api_key
         self.api_secret = api_secret
@@ -46,7 +47,7 @@ class TwitterClient(BaseClient):
         self.bearer_token = bearer_token
         self.bot_screen_name = bot_screen_name
         self.poll_interval = poll_interval
-        
+        self.max_message_length = max_message_length
         self._started = False
         self._message_queue: asyncio.Queue[TwitterMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
@@ -99,18 +100,18 @@ class TwitterClient(BaseClient):
     @ensure_started
     async def send_message(self, ctx: TwitterMessageContext, reply_messages: List[Message]):
         """Send a message using the context"""
-        if not reply_messages:
+        if reply_messages and reply_messages[-1].content:
+            reply_text = reply_messages[-1].content
+        else:
+            logger.warning(f"No content in reply_messages for tweet {ctx.tweet_id}")
             return
-            
-        combined_text = "\n".join([msg.content for msg in reply_messages if msg.content])
-        
-        if len(combined_text) > 280:
-            combined_text = combined_text[:277] + "..."
-            
+
+        if len(reply_text) > self.max_message_length:
+            reply_text = reply_text[:self.max_message_length-3] + "..."
+
         try:
-           
             self.client.create_tweet(
-                text=combined_text,
+                text=reply_text,
                 in_reply_to_tweet_id=ctx.tweet_id
             )
             logger.info(f"Replied to tweet ID={ctx.tweet_id}")
@@ -124,7 +125,7 @@ class TwitterClient(BaseClient):
         query = f"(@{self.bot_screen_name} OR to:{self.bot_screen_name}) -is:retweet -is:quote"
         
         base_wait_time = self.poll_interval
-        max_wait_time = 900  
+        max_wait_time = base_wait_time
         current_wait_time = base_wait_time
 
         while not self._stop_event.is_set():
@@ -176,7 +177,4 @@ class TwitterClient(BaseClient):
                 
             current_wait_time = min(current_wait_time * 2, max_wait_time)
             logger.debug(f"Sleeping {current_wait_time} seconds.")
-            time.sleep(current_wait_time)
-
-
-
+            await asyncio.sleep(current_wait_time)
