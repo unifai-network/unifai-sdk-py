@@ -39,8 +39,8 @@ class TwitterClient(BaseClient):
         bot_screen_name: str,
         poll_interval: int = 20,
         max_message_length: int = 280,
-        respond_to_mentions: bool = True,
-        respond_to_replies: bool = False,
+        respond_to_mentions: bool = False,
+        respond_to_replies: bool = True,
         search_query: str | None = None,
     ):
         self.api_key = api_key
@@ -137,7 +137,7 @@ class TwitterClient(BaseClient):
             if self.respond_to_replies:
                 query_parts.append(f"to:{self.bot_screen_name}")
             if query_parts:
-                query = f"({' OR '.join(query_parts)}) -is:retweet -is:quote"
+                query = f"({' OR '.join(query_parts)}) -from:{self.bot_screen_name} -is:retweet -is:quote"
             else:
                 return
         
