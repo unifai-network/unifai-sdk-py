@@ -39,8 +39,8 @@ class TwitterClient(BaseClient):
         bot_screen_name: str,
         poll_interval: int = 20,
         max_message_length: int = 280,
-        respond_to_mentions: bool = False,
-        respond_to_replies: bool = True,
+        respond_to_mentions: bool = True,
+        respond_to_replies: bool = False,
         search_query: str | None = None,
     ):
         self.api_key = api_key
