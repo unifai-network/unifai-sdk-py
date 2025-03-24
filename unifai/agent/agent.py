@@ -7,10 +7,17 @@ import logging
 import re
 import traceback
 import uuid
-from typing import Dict, List, Optional, Tuple, Set, Any
+from typing import Dict, List
 
 from .model import ModelManager
-from .utils import load_prompt, load_all_prompts, generate_uuid_from_id, get_collection_name, ChannelLockManager, sanitize_collection_name
+from .utils import (
+    load_prompt,
+    load_all_prompts,
+    generate_uuid_from_id,
+    get_collection_name,
+    ChannelLockManager,
+    sanitize_collection_name,
+)
 from ..common.const import BACKEND_WS_ENDPOINT
 from ..memory import (
     ChromaConfig,
@@ -26,6 +33,7 @@ from ..tools import Tools
 from ..client.base import BaseClient, MessageContext, Message
 
 logger = logging.getLogger(__name__)
+
 
 class Agent:
     def __init__(
@@ -43,10 +51,10 @@ class Agent:
 
         Args:
             api_key (str): UnifAI agent API key
-            agent_id (str, optional): Unique identifier for the agent. Different agent_ids will use 
-                separate memory collections in the database, allowing multiple agents to maintain 
+            agent_id (str, optional): Unique identifier for the agent. Different agent_ids will use
+                separate memory collections in the database, allowing multiple agents to maintain
                 independent conversation histories and memories using the same database.
-            clients (List[BaseClient], optional): List of clients to handle different 
+            clients (List[BaseClient], optional): List of clients to handle different
                 communication channels (e.g., Telegram)
             chroma_config (ChromaConfig, optional): Configuration for the Chroma database.
         """
@@ -54,7 +62,7 @@ class Agent:
         self._agent_id = agent_id
         self._prompts = {}
         self._models = {
-            'default': 'anthropic/claude-3-7-sonnet-20250219',
+            "default": "anthropic/claude-3-7-sonnet-20250219",
         }
         self.set_ws_endpoint(BACKEND_WS_ENDPOINT)
         self.tools = Tools(api_key=self.api_key)
@@ -62,9 +70,9 @@ class Agent:
         self._stop_event = asyncio.Event()
         self._tasks: List[asyncio.Task] = []
         self.model_timeout: float | None = 120
-        
+
         self._channel_locks: Dict[str, asyncio.Lock] = {}
-        
+
         self.fact_reflector = FactReflector(litellm.acompletion)
         self.goal_reflector = GoalReflector(litellm.acompletion)
 
@@ -158,7 +166,7 @@ class Agent:
         Returns:
             str: The model name to use
         """
-        return self._models.get(prompt_key, self._models.get('default'))
+        return self._models.get(prompt_key, self._models.get("default"))
 
     def set_model(self, prompt_key, model):
         """
@@ -218,27 +226,25 @@ class Agent:
             try:
                 await client.start()
                 self._tasks.append(
-                    asyncio.create_task(
-                        self._handle_client_messages(client)
-                    )
+                    asyncio.create_task(self._handle_client_messages(client))
                 )
                 logger.info(f"Started client: {client.client_id}")
             except Exception as e:
                 logger.error(f"Failed to start client {client.client_id}: {e}")
 
         await self._stop_event.wait()
-        
+
         for task in self._tasks:
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
-        
+
         for client in self._clients.values():
             try:
                 logger.info(f"Stopped client: {client.client_id}")
                 await client.stop()
             except Exception as e:
                 logger.error(f"Failed to stop client {client.client_id}: {e}")
-        
+
         logger.info("Agent has been stopped.")
 
     async def stop(self):
@@ -248,15 +254,15 @@ class Agent:
 
     def get_memory_manager(self, user_id: str, chat_id: str) -> ChromaMemoryManager:
         chat_id = chat_id or user_id
-        
+
         collection_base = f"{self._agent_id}-{user_id}-{chat_id}"
         collection_name = sanitize_collection_name(collection_base)
-        
+
         config = ChromaConfig(
             storage_type=self.memory_config.storage_type,
             host=self.memory_config.host,
             port=self.memory_config.port,
-            collection_name=collection_name
+            collection_name=collection_name,
         )
         return ChromaMemoryManager(config)
 
@@ -268,25 +274,27 @@ class Agent:
         client: BaseClient,
         ctx: MessageContext,
         history_count: int,
-    ) -> tuple[list[Message], list[ToolInfo], list[Dict], tuple[int, int]]:
+    ) -> tuple[list[Message], list[ToolInfo], list[Dict], tuple[int, int], float]:
         message = ctx.message
         user_id = ctx.user_id
         chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
         input_tokens = 0
         output_tokens = 0
+        total_cost = 0
 
-        response = await self.model_manager.chat_completion(
+        response, cost = await self.model_manager.chat_completion(
             model=self.get_model("history"),
             messages=[
                 {"role": "system", "content": self.get_prompt("agent.history")},
-                {"role": "user", "content": message}
+                {"role": "user", "content": message},
             ],
             timeout=self.model_timeout,
         )
 
-        input_tokens += response.usage.prompt_tokens # type: ignore
-        output_tokens += response.usage.completion_tokens # type: ignore
+        input_tokens += response.usage.prompt_tokens  # type: ignore
+        output_tokens += response.usage.completion_tokens  # type: ignore
+        total_cost += cost
 
         use_history = False
         try:
@@ -306,11 +314,9 @@ class Agent:
 
         relevant_memories = await memory_manager.get_memories(
             content=message,
-            count=5, 
+            count=5,
             threshold=0.7,
-            metadata={
-                "type": {"$in": ["fact", "goal"]}
-            }
+            metadata={"type": {"$in": ["fact", "goal"]}},
         )
 
         model = self.get_model("default") or ""
@@ -327,87 +333,98 @@ class Agent:
             goals = []
             for mem in relevant_memories:
                 if mem.memory_type == MemoryType.FACT:
-                    facts.extend(mem.content.get('claims', []))
+                    facts.extend(mem.content.get("claims", []))
                 elif mem.memory_type == MemoryType.GOAL:
-                    goals.extend(mem.content.get('goals', []))
-            
+                    goals.extend(mem.content.get("goals", []))
+
             if facts:
-                system_messages.append({
-                    "type": "text",
-                    "text": "Relevant facts:\n" + "\n".join([f"- {fact}" for fact in facts])
-                })
-            
+                system_messages.append(
+                    {
+                        "type": "text",
+                        "text": "Relevant facts:\n"
+                        + "\n".join([f"- {fact}" for fact in facts]),
+                    }
+                )
+
             if goals:
-                system_messages.append({
-                    "type": "text",
-                    "text": "Active goals:\n" + "\n".join([f"- {goal}" for goal in goals])
-                })
+                system_messages.append(
+                    {
+                        "type": "text",
+                        "text": "Active goals:\n"
+                        + "\n".join([f"- {goal}" for goal in goals]),
+                    }
+                )
 
         if anthropic_cache_control:
-            system_messages[-1]["cache_control"] = { "type": "ephemeral" }
+            system_messages[-1]["cache_control"] = {"type": "ephemeral"}
         messages: List = [{"role": "system", "content": system_messages}]
 
         if recent_memories:
             recent_interactions = sorted(
                 recent_memories,
                 key=lambda x: x.metadata.get("timestamp", ""),
-                reverse=True
+                reverse=True,
             )[:history_count]
 
             recent_interactions = list(reversed(recent_interactions))
 
             for mem in recent_interactions:
-                if mem.content.get('interaction', {}).get('messages'):
+                if mem.content.get("interaction", {}).get("messages"):
                     has_non_tool_message = False
-                    for msg in mem.content['interaction']['messages']:
-                        if msg.get('tool_calls'):
+                    for msg in mem.content["interaction"]["messages"]:
+                        if msg.get("tool_calls"):
                             is_valid_tool_call = True
-                            for tool_call in msg.get('tool_calls', []):
-                                if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', tool_call.get('function', {}).get('name', '')):
+                            for tool_call in msg.get("tool_calls", []):
+                                if not re.match(
+                                    r"^[a-zA-Z0-9_-]{1,64}$",
+                                    tool_call.get("function", {}).get("name", ""),
+                                ):
                                     is_valid_tool_call = False
                             if not is_valid_tool_call:
                                 continue
-                        if msg.get('tool_call') != 'tool':
+                        if msg.get("tool_call") != "tool":
                             has_non_tool_message = True
                             messages.append(msg)
                         elif has_non_tool_message:
                             messages.append(msg)
 
-        messages.append({
-            "role": "user",
-            "content": [{
-                "type": "text",
-                "text": message,
-            }],
-        })
-        interaction = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ]
-        }
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": message,
+                    }
+                ],
+            }
+        )
+        interaction = {"messages": [{"role": "user", "content": message}]}
         tool_infos_collection = []
         reply_messages = []
-        
+
         sent_using_tools = False
         while True:
             if anthropic_cache_control:
-                messages[-1]["content"][-1]["cache_control"] = { "type": "ephemeral" }
-            response = await self.model_manager.chat_completion(
+                messages[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+            response, cost = await self.model_manager.chat_completion(
                 model=model,
                 messages=messages,
                 tools=self.tools.get_tools(cache_control=anthropic_cache_control),
                 parallel_tool_calls=True,
-                extra_headers={ "anthropic-beta": "token-efficient-tools-2025-02-19" } if anthropic_cache_control else {},
+                extra_headers=(
+                    {"anthropic-beta": "token-efficient-tools-2025-02-19"}
+                    if anthropic_cache_control
+                    else {}
+                ),
                 timeout=self.model_timeout,
             )
             if anthropic_cache_control:
                 del messages[-1]["content"][-1]["cache_control"]
 
-            input_tokens += response.usage.prompt_tokens # type: ignore
-            output_tokens += response.usage.completion_tokens # type: ignore
+            input_tokens += response.usage.prompt_tokens  # type: ignore
+            output_tokens += response.usage.completion_tokens  # type: ignore
+            total_cost += cost
 
             assistant_message = response.choices[0].message  # type: ignore
 
@@ -416,29 +433,38 @@ class Agent:
                 # the tool call will still fail but at least the llm call will not fail so llm can correct itself
                 for i, tool_call in enumerate(assistant_message.tool_calls):
                     if tool_call.function.name:
-                        sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '', tool_call.function.name)
+                        sanitized_name = re.sub(
+                            r"[^a-zA-Z0-9_-]", "", tool_call.function.name
+                        )
                         sanitized_name = sanitized_name[:64]
                         assistant_message.tool_calls[i].function.name = sanitized_name
 
             if assistant_message.content or assistant_message.tool_calls:
                 messages.append(assistant_message)
                 reply_messages.append(assistant_message)
-                interaction["messages"].append(assistant_message.model_dump(mode='json'))
+                interaction["messages"].append(
+                    assistant_message.model_dump(mode="json")
+                )
 
             if not assistant_message.tool_calls:
                 break
 
             if ctx.progress_report and not sent_using_tools:
-                await client.send_message(ctx, [Message(
-                    role="assistant",
-                    content="I'm working on it...",
-                )])
+                await client.send_message(
+                    ctx,
+                    [
+                        Message(
+                            role="assistant",
+                            content="I'm working on it...",
+                        )
+                    ],
+                )
                 sent_using_tools = True
 
             for tool_call in assistant_message.tool_calls:
                 tool_info = ToolInfo(
                     name=tool_call.function.name or "",
-                    description=tool_call.function.arguments
+                    description=tool_call.function.arguments,
                 )
                 tool_infos_collection.append(tool_info)
 
@@ -452,21 +478,24 @@ class Agent:
             for result in results:
                 reply_messages.append(Message.model_validate(result))
 
-            messages.append({
-                "role": "user",
-                "content": [{
-                    "type": "text",
-                    "text": "Above is the result",
-                }]
-            })
-
-        await client.send_message(ctx, reply_messages)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Above is the result",
+                        }
+                    ],
+                }
+            )
 
         return (
             reply_messages,
             tool_infos_collection,
             interaction["messages"],
             (input_tokens, output_tokens),
+            total_cost,
         )
 
     async def process_message_with_memory(
@@ -479,21 +508,25 @@ class Agent:
         user_id = ctx.user_id
         chat_id = ctx.chat_id
         memory_manager = self.get_memory_manager(user_id, chat_id)
-        
-        reply_messages, tool_infos, interaction_content, usage = await self.get_reply(
-            client,
-            ctx,
-            history_count=history_count
+
+        reply_messages, tool_infos, interaction_content, usage, cost = (
+            await self.get_reply(client, ctx, history_count=history_count)
         )
 
+        replied = await self.reply_messages(
+            client, ctx, messages=reply_messages, cost=cost
+        )
+        if not replied:
+            return [], usage
+
         reply_text = reply_messages[-1].get("content", "") if reply_messages else ""
-        
+
         user_uuid = generate_uuid_from_id(str(user_id))
         agent_uuid = generate_uuid_from_id(self._agent_id)
-        
+
         base_metadata = {
             "chat_id": str(chat_id),
-            "user_id": str(user_id), 
+            "user_id": str(user_id),
             "timestamp": str(datetime.now().isoformat()),
             "has_tools": bool(tool_infos),
             "is_private": chat_id == user_id,
@@ -501,19 +534,18 @@ class Agent:
 
         tasks = [
             self.fact_reflector.reflect(f"User: {message}\nAssistant: {reply_text}"),
-            self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply_text}")
+            self.goal_reflector.reflect(f"User: {message}\nAssistant: {reply_text}"),
         ]
 
         fact_result, goal_result = await asyncio.gather(*tasks)
-        
+
         memory_tasks = []
 
-        if fact_result.success and fact_result.data and fact_result.data.get('claims'):
+        if fact_result.success and fact_result.data and fact_result.data.get("claims"):
             metadata = base_metadata.copy()
-            metadata.update({
-                "type": "fact",
-                "claims_count": len(fact_result.data['claims'])
-            })
+            metadata.update(
+                {"type": "fact", "claims_count": len(fact_result.data["claims"])}
+            )
             if tool_infos:
                 metadata["tool_names"] = ",".join(t.name for t in tool_infos)
 
@@ -523,22 +555,21 @@ class Agent:
                 agent_id=agent_uuid,
                 content={
                     "text": "Extracted facts from conversation",
-                    "claims": fact_result.data['claims']
+                    "claims": fact_result.data["claims"],
                 },
                 memory_type=MemoryType.FACT,
                 metadata=metadata,
                 role=MemoryRole.SYSTEM,
                 tools=tool_infos if tool_infos else [],
-                unique=True
+                unique=True,
             )
             memory_tasks.append(memory_manager.create_memory(fact_memory))
 
-        if goal_result.success and goal_result.data and goal_result.data.get('goals'):
+        if goal_result.success and goal_result.data and goal_result.data.get("goals"):
             metadata = base_metadata.copy()
-            metadata.update({
-                "type": "goal",
-                "goals_count": len(goal_result.data['goals'])
-            })
+            metadata.update(
+                {"type": "goal", "goals_count": len(goal_result.data["goals"])}
+            )
             if tool_infos:
                 metadata["tool_names"] = ",".join(t.name for t in tool_infos)
 
@@ -548,21 +579,18 @@ class Agent:
                 agent_id=agent_uuid,
                 content={
                     "text": "Goals and progress tracking",
-                    "goals": goal_result.data['goals']
+                    "goals": goal_result.data["goals"],
                 },
                 memory_type=MemoryType.GOAL,
                 metadata=metadata,
                 role=MemoryRole.SYSTEM,
                 tools=tool_infos if tool_infos else [],
-                unique=True
+                unique=True,
             )
             memory_tasks.append(memory_manager.create_memory(goal_memory))
-            
+
         metadata = base_metadata.copy()
-        metadata.update({
-            "type": "interaction",
-            "message_length": len(message)
-        })
+        metadata.update({"type": "interaction", "message_length": len(message)})
         if tool_infos:
             metadata["tool_names"] = ",".join(t.name for t in tool_infos)
         interaction_memory = Memory(
@@ -571,22 +599,30 @@ class Agent:
             agent_id=agent_uuid,
             content={
                 "text": f"User: {message}\nAssistant: {reply_text}",
-                "interaction": {
-                    "messages": interaction_content
-                }
+                "interaction": {"messages": interaction_content},
             },
             memory_type=MemoryType.INTERACTION,
             metadata=metadata,
             role=MemoryRole.SYSTEM,
             tools=tool_infos if tool_infos else [],
-            unique=False
+            unique=False,
         )
         memory_tasks.append(memory_manager.create_memory(interaction_memory))
-        
+
         if memory_tasks:
             await asyncio.gather(*memory_tasks)
-        
+
         return reply_messages, usage
+
+    async def reply_messages(
+        self,
+        client: BaseClient,
+        ctx: MessageContext,
+        messages: list[Message],
+        cost: float,
+    ):
+        await client.send_message(ctx, messages)
+        return True
 
     def add_client(self, client: BaseClient) -> None:
         """Add a new client to the agent"""
@@ -604,14 +640,14 @@ class Agent:
                 ctx = await client.receive_message()
                 if ctx:
                     self._tasks.append(
-                        asyncio.create_task(
-                            self._process_channel_message(client, ctx)
-                        )
+                        asyncio.create_task(self._process_channel_message(client, ctx))
                     )
             except Exception as e:
                 logger.error(f"Error handling message from {client.client_id}: {e}")
 
-    async def _process_channel_message(self, client: BaseClient, ctx: MessageContext) -> None:
+    async def _process_channel_message(
+        self, client: BaseClient, ctx: MessageContext
+    ) -> None:
         """Process message within a channel"""
         channel_lock = self.get_channel_lock(client.client_id, ctx.chat_id)
 
@@ -620,14 +656,21 @@ class Agent:
                 await self.process_message_with_memory(client, ctx)
             except Exception as e:
                 error_traceback = traceback.format_exc()
-                logger.error(f"Error processing message in channel {ctx.chat_id}: {e}\n{error_traceback}")
+                logger.error(
+                    f"Error processing message in channel {ctx.chat_id}: {e}\n{error_traceback}"
+                )
                 error_message = "Sorry, something went wrong. Most likely the model is being rate limited due to high demand. Please try again later."
                 if isinstance(e, RateLimitError):
                     error_message = "Sorry, I'm being rate limited due to high demand. Please try again later."
-                await client.send_message(ctx, [Message(
-                    role="assistant",
-                    content=error_message,
-                )])
+                await client.send_message(
+                    ctx,
+                    [
+                        Message(
+                            role="assistant",
+                            content=error_message,
+                        )
+                    ],
+                )
 
     def get_collection_name(self, client_id: str, chat_id: str) -> str:
         """Generate a unique collection name for memory storage"""

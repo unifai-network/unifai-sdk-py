@@ -58,7 +58,7 @@ class ModelManager:
                 except Exception as e:
                     logger.error(f'Error updating usage stats: {e}')
                 
-                return response
+                return response, cost
                 
             except Exception as e:
                 attempt += 1
