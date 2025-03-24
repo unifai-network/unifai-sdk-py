@@ -2,9 +2,9 @@ import asyncio
 import logging
 from functools import wraps
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Union
 import discord
-from discord import Message as DiscordMessage, TextChannel, User, Guild
+from discord import Message as DiscordMessage, TextChannel, User, Guild, MessageReference, DMChannel, abc
 from discord.ext import commands
 from .base import BaseClient, MessageContext, Message
 
@@ -20,9 +20,9 @@ def ensure_started(func):
 
 @dataclass
 class DiscordMessageContext(MessageContext):
-    channel: TextChannel
+    channel: abc.Messageable
     chat_id: str
-    user: User
+    user: Union[User, discord.Member]
     user_id: str
     message: str
     message_id: int
@@ -108,7 +108,10 @@ class DiscordClient(BaseClient):
         
         channel = ctx.channel
         for msg in messages:
-            await channel.send(msg, reference=ctx.original_message if len(messages) == 1 else None)
+            if len(messages) == 1:
+                await channel.send(msg, reference=ctx.original_message)
+            else:
+                await channel.send(msg)
 
     async def _handle_discord_message(self, message: DiscordMessage):
         """Handle incoming Discord message"""

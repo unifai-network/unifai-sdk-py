@@ -30,6 +30,7 @@ dependencies = [
     "boto3>=1.37.3",
     "litellm>=1.63.0",
     "tweepy>=4.15.0",
+    "discord-py>=2.5.2",
 ]
 license = "MIT"
 license-files = ["LICENSE"]
