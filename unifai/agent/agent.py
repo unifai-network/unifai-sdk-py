@@ -292,17 +292,21 @@ class Agent:
             timeout=self.model_timeout,
         )
 
-        input_tokens += response.usage.prompt_tokens  # type: ignore
-        output_tokens += response.usage.completion_tokens  # type: ignore
-        total_cost += cost
+        if response is not None:
+            input_tokens += response.usage.prompt_tokens  # type: ignore
+            output_tokens += response.usage.completion_tokens  # type: ignore
+            total_cost += cost
 
-        use_history = False
-        try:
-            logger.info(f"History response: {response.choices[0].message.content}")  # type: ignore
-            history_score = int(response.choices[0].message.content)  # type: ignore
-            use_history = history_score > 50
-        except Exception as e:
-            logger.error(f"Error determining whether to use history: {e}")
+            use_history = False
+            try:
+                logger.info(f"History response: {response.choices[0].message.content}")  # type: ignore
+                history_score = int(response.choices[0].message.content)  # type: ignore
+                use_history = history_score > 50
+            except Exception as e:
+                logger.error(f"Error determining whether to use history: {e}")
+        else:
+            logger.error("Failed to get history response, proceeding without history")
+            use_history = False
 
         logger.info(f"Use history: {use_history}")
 
@@ -421,6 +425,10 @@ class Agent:
             )
             if anthropic_cache_control:
                 del messages[-1]["content"][-1]["cache_control"]
+
+            if response is None:
+                logger.error("Failed to get model response")
+                break
 
             input_tokens += response.usage.prompt_tokens  # type: ignore
             output_tokens += response.usage.completion_tokens  # type: ignore
