@@ -13,6 +13,7 @@ class MessageContext(ABC):
     user_id: str
     message: str
     progress_report: bool
+    cost: float
 
 class BaseClient(ABC):
     @property

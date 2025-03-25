@@ -128,5 +128,6 @@ class DiscordClient(BaseClient):
             original_message=message,
             guild=message.guild,
             progress_report=True,
+            cost=0.0,
         )
         await self._message_queue.put(ctx)

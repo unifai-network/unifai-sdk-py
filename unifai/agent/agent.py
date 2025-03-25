@@ -458,6 +458,7 @@ class Agent:
                 break
 
             if ctx.progress_report and not sent_using_tools:
+                ctx.cost = 0.0
                 await client.send_message(
                     ctx,
                     [
@@ -521,11 +522,8 @@ class Agent:
             await self.get_reply(client, ctx, history_count=history_count)
         )
 
-        replied = await self.reply_messages(
-            client, ctx, messages=reply_messages, cost=cost
-        )
-        if not replied:
-            return [], usage
+        ctx.cost = cost
+        await client.send_message(ctx, reply_messages)
 
         reply_text = reply_messages[-1].get("content", "") if reply_messages else ""
 
@@ -622,16 +620,6 @@ class Agent:
 
         return reply_messages, usage
 
-    async def reply_messages(
-        self,
-        client: BaseClient,
-        ctx: MessageContext,
-        messages: list[Message],
-        cost: float,
-    ):
-        await client.send_message(ctx, messages)
-        return True
-
     def add_client(self, client: BaseClient) -> None:
         """Add a new client to the agent"""
         self._clients[client.client_id] = client
@@ -670,6 +658,7 @@ class Agent:
                 error_message = "Sorry, something went wrong. Most likely the model is being rate limited due to high demand. Please try again later."
                 if isinstance(e, RateLimitError):
                     error_message = "Sorry, I'm being rate limited due to high demand. Please try again later."
+                ctx.cost = 0.0
                 await client.send_message(
                     ctx,
                     [

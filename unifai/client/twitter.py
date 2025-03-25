@@ -185,6 +185,7 @@ class TwitterClient(BaseClient):
                             message=tweet.text,
                             author_name=author.name,
                             progress_report=False,
+                            cost=0.0,
                         )
                         
                         await self._message_queue.put(ctx)
