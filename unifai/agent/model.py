@@ -71,6 +71,8 @@ class ModelManager:
                     logger.error(f"All {retries} attempts failed. Last error: {e}")
                     raise last_error
 
+        return None, 0
+
     def get_usage_stats(self, hours=None):
         """Get usage statistics for the specified number of hours."""
         if not self.usage_history:
