@@ -134,5 +134,6 @@ class TelegramClient(BaseClient):
             message_id=update.message.message_id,
             update=update,
             progress_report=True,
+            cost=0.0,
         )
         await self._message_queue.put(ctx)
