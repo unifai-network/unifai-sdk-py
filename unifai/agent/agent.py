@@ -434,6 +434,10 @@ class Agent:
             output_tokens += response.usage.completion_tokens  # type: ignore
             total_cost += cost
 
+            if not response.choices:  # type: ignore
+                logger.error(f"Invalid response: {response}")
+                break
+
             assistant_message = response.choices[0].message  # type: ignore
 
             if assistant_message.tool_calls:
