@@ -4,7 +4,7 @@ from functools import wraps
 from dataclasses import dataclass
 from typing import List, Optional, Union
 import discord
-from discord import Message as DiscordMessage, TextChannel, User, Guild, MessageReference, DMChannel, abc
+from discord import Message as DiscordMessage, User, Guild, abc
 from discord.ext import commands
 from .base import BaseClient, MessageContext, Message
 
@@ -31,10 +31,13 @@ class DiscordMessageContext(MessageContext):
 
 class DiscordClient(BaseClient):
     def __init__(self, bot_token: str, command_prefix: str = "!"):
+        intents = discord.Intents.default()
+        intents.message_content = True
+
         self.bot_token = bot_token
         self.bot_name = ""
         self.command_prefix = command_prefix
-        self._bot = commands.Bot(command_prefix=command_prefix, intents=discord.Intents.all())
+        self._bot = commands.Bot(command_prefix=command_prefix, intents=intents)
         self._started = False
         self._message_queue: asyncio.Queue[DiscordMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
@@ -72,8 +75,7 @@ class DiscordClient(BaseClient):
         self._started = True
     
         asyncio.create_task(self._bot.start(self.bot_token))
-        
-     
+
         while not self._bot.is_ready():
             await asyncio.sleep(0.1)
 
