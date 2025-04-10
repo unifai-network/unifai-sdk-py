@@ -100,11 +100,11 @@ class OpenAIAPI():
                     "object": "chat.completion",
                     "created": int(time.time()),
                     "model": model,
-                    "choices": {
+                    "choices": [{
                         "index": 0,
                         "message": messages[-1],
                         "finish_reason": finish_reason,
-                    },
+                    }],
                     "usage": {
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
