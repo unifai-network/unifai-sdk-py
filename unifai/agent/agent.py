@@ -312,16 +312,26 @@ class Agent:
 
         recent_memories = []
         if use_history:
-            recent_memories = await memory_manager.get_recent_memories(
-                count=history_count,
-            )
+            try:
+                recent_memories = await memory_manager.get_recent_memories(
+                    count=history_count,
+                )
+            except Exception as e:
+                logger.error(f"Error getting recent memories: {e}")
+                use_history = False
+                logger.info("Proceeding without history")
 
-        relevant_memories = await memory_manager.get_memories(
-            content=message,
-            count=5,
-            threshold=0.7,
-            metadata={"type": {"$in": ["fact", "goal"]}},
-        )
+        relevant_memories = []
+        try:
+            relevant_memories = await memory_manager.get_memories(
+                content=message,
+                count=5,
+                threshold=0.7,
+                metadata={"type": {"$in": ["fact", "goal"]}},
+            )
+        except Exception as e:
+            logger.error(f"Error getting relevant memories: {e}")
+            logger.info("Proceeding without relevant memories")
 
         model = self.get_model("default") or ""
         anthropic_cache_control = model.lower().startswith("anthropic")
