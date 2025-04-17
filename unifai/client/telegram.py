@@ -28,13 +28,14 @@ class TelegramMessageContext(MessageContext):
     update: Update
 
 class TelegramClient(BaseClient):
-    def __init__(self, bot_token: str):
+    def __init__(self, bot_token: str, concurrent_updates: bool = False):
         self.bot_token = bot_token
         self.bot_name = ""
         self._application = None
         self._started = False
         self._message_queue: asyncio.Queue[TelegramMessageContext] = asyncio.Queue()
         self._stop_event = asyncio.Event()
+        self._concurrent_updates = concurrent_updates
 
     @property
     def client_id(self) -> str:
@@ -44,8 +45,12 @@ class TelegramClient(BaseClient):
         """Start the client"""
         if self._started:
             return
-            
-        self._application = ApplicationBuilder().token(self.bot_token).build()
+
+        builder = ApplicationBuilder().token(self.bot_token)
+        if self._concurrent_updates:
+            builder = builder.concurrent_updates(True)
+
+        self._application = builder.build()
 
         await self._application.initialize()
 
