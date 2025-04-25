@@ -116,39 +116,131 @@ class Tools:
     def set_api_endpoint(self, endpoint: str):
         self._api.set_endpoint(endpoint)
 
-    def get_tools(self, cache_control: bool = False) -> List[Dict[str, Any]]:
-        """
-        Get the list of tools in OpenAI API compatible format.
+    async def _fetch_static_tools(self, staticToolkits: List[str] = None, staticActions: List[str] = None) -> List[Dict[str, Any]]:
+        result_tools = []
+        
+        if staticToolkits:
+            toolkit_tasks = [self._api.get_toolkit_actions(toolkit_id) for toolkit_id in staticToolkits]
+            toolkit_results = await asyncio.gather(*toolkit_tasks, return_exceptions=True)
+            
+            for i, result in enumerate(toolkit_results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to fetch toolkit {staticToolkits[i]}: {result}")
+                else:
+                    for action in result.get("actions", []):
+                        result_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": action.get("id", "unknown"),
+                                "description": action.get("description", ""),
+                                "parameters": action.get("parameters", {})
+                            }
+                        })
+        
+        if staticActions:
+            action_tasks = [self._api.get_action(action_id) for action_id in staticActions]
+            action_results = await asyncio.gather(*action_tasks, return_exceptions=True)
+            
+            for i, result in enumerate(action_results):
+                if isinstance(result, Exception):
+                    logger.error(f"Failed to fetch action {staticActions[i]}: {result}")
+                else:
+                    result_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": result.get("id", "unknown"),
+                            "description": result.get("description", ""),
+                            "parameters": result.get("parameters", {})
+                        }
+                    })
+        
+        return result_tools
 
-        :param cache_control: Whether to add cache control to the tools, only works for Anthropic models
-        :return: List of tools
-        """
-        t = [tool.model_dump(mode="json") for tool in tool_list]
-        if cache_control:
-            t[-1]["cache_control"] = { "type": "ephemeral" }
-        return t
+    def get_tools(self, dynamicTools: bool = True, staticToolkits: List[str] = None, staticActions: List[str] = None, cache_control: bool = False) -> List[Dict[str, Any]]:
+        tools = []
+        
+        if dynamicTools:
+            tools.extend([tool.model_dump(mode="json") for tool in tool_list])
+        
+        if staticToolkits or staticActions:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                static_tools = loop.run_until_complete(self._fetch_static_tools(staticToolkits, staticActions))
+                loop.close()
+                
+                tools.extend(static_tools)
+            except Exception as e:
+                logger.error(f"Error fetching static tools: {e}")
+        
+        if cache_control and tools:
+            tools[-1]["cache_control"] = {"type": "ephemeral"}
+        
+        return tools
+
+    async def get_tools_async(self, dynamicTools: bool = True, staticToolkits: List[str] = None, staticActions: List[str] = None, cache_control: bool = False) -> List[Dict[str, Any]]:
+        tools = []
+        
+        if dynamicTools:
+            tools.extend([tool.model_dump(mode="json") for tool in tool_list])
+        
+        if staticToolkits or staticActions:
+            static_tools = await self._fetch_static_tools(staticToolkits, staticActions)
+            tools.extend(static_tools)
+        
+        if cache_control and tools:
+            tools[-1]["cache_control"] = {"type": "ephemeral"}
+        
+        return tools
 
     async def call_tool(self, name: str | FunctionName, arguments: dict | str) -> Any:
-        """
-        Call a tool based on the function name and arguments.
-
-        :param name: The name of the function to call, either as a string or FunctionName enum
-        :param arguments: The arguments to pass to the function, either a dictionary or a JSON encoded string
-        :return: The result of the function call
-        """
         name = name if isinstance(name, str) else name.value
         args = json.loads(arguments) if isinstance(arguments, str) else arguments
+        
         if name == FunctionName.SEARCH_TOOLS.value:
             return await self._api.search_tools(args)
         elif name == FunctionName.CALL_TOOL.value:
             return await self._api.call_tool(args)
         else:
-            raise ValueError(f"Unknown tool name: {name}")
+            call_args = {
+                "action": name,
+                "payload": args
+            }
+            try:
+                return await self._api.call_tool(call_args)
+            except Exception as e:
+                raise ValueError(f"Failed to call tool {name}: {e}")
+
+    async def call_all_tools(self, name: str, arguments: dict | str) -> Any:
+        """
+        Call a tool by name, whether it's a dynamic tool or a static one.
+        
+        :param name: The name of the function/action to call
+        :param arguments: The arguments to pass to the function
+        :return: The result of the function call
+        """
+        args = json.loads(arguments) if isinstance(arguments, str) else arguments
+        
+        # First check if it's one of our built-in functions
+        if name == FunctionName.SEARCH_TOOLS.value:
+            return await self._api.search_tools(args)
+        elif name == FunctionName.CALL_TOOL.value:
+            return await self._api.call_tool(args)
+        else:
+            # It might be a static action, try to call it directly
+            call_args = {
+                "action": name,
+                "payload": args
+            }
+            try:
+                return await self._api.call_tool(call_args)
+            except Exception as e:
+                raise ValueError(f"Failed to call tool {name}: {e}")
 
     async def _sem_call_tool(self, name: str, arguments: dict | str, tool_call_id: str, semaphore: asyncio.Semaphore) -> Optional[OpenAIToolResult]:
         async with semaphore:
             try:
-                result = await self.call_tool(name, arguments)
+                result = await self.call_all_tools(name, arguments)
             except Exception as e:
                 result = {"error": str(e)}
             if result is None:
@@ -160,13 +252,6 @@ class Tools:
             )
 
     async def call_tools(self, tool_calls: Optional[List[OpenAIToolCall]], concurrency: int = 1) -> List[dict[str, Any]]:
-        """
-        Call multiple tools based on OpenAI tool call input/output format.
-
-        :param tool_calls: List of OpenAI tool call objects containing function name and arguments
-        :param concurrency: The maximum number of concurrent tool calls
-        :return: List of results from each tool call
-        """
         semaphore = asyncio.Semaphore(concurrency)
         tasks = [
             self._sem_call_tool(

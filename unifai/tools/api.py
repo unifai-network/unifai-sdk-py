@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, List
 from ..common.api import API
 
 class ToolsAPI(API):
@@ -7,3 +7,9 @@ class ToolsAPI(API):
 
     async def call_tool(self, arguments: dict) -> Any:
         return await self.request('POST', '/actions/call', json=arguments, timeout=50)
+    
+    async def get_toolkit_actions(self, toolkit_id: str) -> Any:
+        return await self.request('GET', f'/toolkits/{toolkit_id}/actions')
+    
+    async def get_action(self, action_id: str) -> Any:
+        return await self.request('GET', f'/actions/{action_id}')
