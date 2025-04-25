@@ -27,6 +27,53 @@ import unifai
 
 tools = unifai.Tools(api_key='xxx')
 ```
+
+### Tool Types
+
+Unifai provides a flexible system for integrating AI tools in your applications:
+
+#### Dynamic Tools
+Dynamic tools are enabled by default, allowing your agent to discover and use tools on-the-fly based on the task at hand.
+
+```python
+# Enable dynamic tools (default behavior)
+tools_with_dynamic = tools.get_tools(dynamicTools=True)
+```
+
+#### Static Toolkits
+Static toolkits allow you to specify entire toolkits to be made available to your agent.
+
+```python
+# Get tools from specific toolkits
+toolkit_tools = tools.get_tools(
+    dynamicTools=False,  # Optional: disable dynamic tools
+    staticToolkits=["toolkit_id_1", "toolkit_id_2"]
+)
+```
+
+#### Static Actions
+Static actions provide granular control, allowing you to specify individual actions (tools).
+
+```python
+# Get specific actions
+action_tools = tools.get_tools(
+    dynamicTools=False,  # Optional: disable dynamic tools
+    staticActions=["action_id_1", "action_id_2"]
+)
+```
+
+#### Combining Approaches
+You can combine these approaches for a customized tool setup:
+
+```python
+# Combine dynamic and static tools
+combined_tools = tools.get_tools(
+    dynamicTools=True,
+    staticToolkits=["essential_toolkit_id"],
+    staticActions=["critical_action_id"]
+)
+```
+
 Then you can pass the tools to any OpenAI compatible API. Popular options include:
 
 - OpenAI's native API: For using OpenAI models directly
