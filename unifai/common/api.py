@@ -1,6 +1,13 @@
 import httpx
 from typing import Dict, Any
 
+class APIError(Exception):
+    """Exception raised for API errors with response details."""
+    def __init__(self, status_code: int, response_json: Dict[str, Any]):
+        self.status_code = status_code
+        self.response_json = response_json
+        super().__init__(f"API error {status_code}: {response_json}")
+
 class API:
     api_key: str
     api_uri: str
@@ -35,6 +42,12 @@ class API:
             **kwargs,
         )
 
-        response.raise_for_status()
-
-        return response.json()
+        if response.is_success:
+            return response.json()
+        else:
+            try:
+                error_data = response.json()
+            except:
+                error_data = {"detail": response.text}
+            
+            raise APIError(response.status_code, error_data)
