@@ -37,7 +37,7 @@ Dynamic tools are enabled by default, allowing your agent to discover and use to
 
 ```python
 # Enable dynamic tools (default behavior)
-tools_with_dynamic = tools.get_tools(dynamicTools=True)
+tools_with_dynamic = tools.get_tools(dynamic_tools=True)
 ```
 
 #### Static Toolkits
@@ -46,8 +46,8 @@ Static toolkits allow you to specify entire toolkits to be made available to you
 ```python
 # Get tools from specific toolkits
 toolkit_tools = tools.get_tools(
-    dynamicTools=False,  # Optional: disable dynamic tools
-    staticToolkits=["toolkit_id_1", "toolkit_id_2"]
+    dynamic_tools=False,  # Optional: disable dynamic tools
+    static_toolkits=["toolkit_id_1", "toolkit_id_2"]
 )
 ```
 
@@ -57,8 +57,8 @@ Static actions provide granular control, allowing you to specify individual acti
 ```python
 # Get specific actions
 action_tools = tools.get_tools(
-    dynamicTools=False,  # Optional: disable dynamic tools
-    staticActions=["action_id_1", "action_id_2"]
+    dynamic_tools=False,  # Optional: disable dynamic tools
+    static_actionss=["action_id_1", "action_id_2"]
 )
 ```
 
@@ -68,9 +68,9 @@ You can combine these approaches for a customized tool setup:
 ```python
 # Combine dynamic and static tools
 combined_tools = tools.get_tools(
-    dynamicTools=True,
-    staticToolkits=["essential_toolkit_id"],
-    staticActions=["critical_action_id"]
+    dynamic_tools=True,
+    static_toolkits=["essential_toolkit_id"],
+    static_actionss=["critical_action_id"]
 )
 ```
 
