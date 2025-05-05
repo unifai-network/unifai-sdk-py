@@ -3,7 +3,7 @@ import unifai
 
 toolkit = unifai.Toolkit(api_key="YOUR_TOOLKIT_API_KEY")
 
-asyncio.run(toolkit.update_toolkit(name="Echo Slam", description="What's in, what's out."))
+asyncio.run(toolkit.update_toolkit(name="EchoChamber", description="What's in, what's out."))
 
 @toolkit.event
 async def on_ready():

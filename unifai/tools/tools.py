@@ -100,87 +100,124 @@ tool_list: List[Tool] = [
 ]
 
 class Tools:
+    """
+    A class to interact with the Unifai Tools API.
+    """
     _api_key: str
     _api: ToolsAPI
-    _max_limit: int
 
     def __init__(self, api_key: str):
+        """
+        :param api_key: the API key of your toolkit.
+        """
         self._api_key = api_key
         self._api = ToolsAPI(api_key)
         self.set_api_endpoint(BACKEND_API_ENDPOINT)
-        self._max_limit = 100 
 
     def set_api_endpoint(self, endpoint: str):
         self._api.set_endpoint(endpoint)
 
-    async def _fetch_static_tools(self, static_toolkits: List[str] = None, static_actions: List[str] = None) -> List[Dict[str, Any]]:
-        result_tools_list: List[Dict[str, Any]] = []
+    async def _fetch_static_tools(
+        self,
+        static_toolkits: List[str] | None = None,
+        static_actions: List[str] | None = None,
+    ) -> List[Dict[str, Any]]:
+        static_tools: List[Dict[str, Any]] = []
 
         try:
             if static_toolkits or static_actions:
-                actions = await self._api.search_tools(
-                    arguments={},
-                    toolkit_ids=static_toolkits,
-                    action_ids=static_actions,
-                    limit=self._max_limit
-                )
+                args: Dict[str, Any] = {"limit": 100}
+                if static_toolkits:
+                    args["includeToolkits"] = static_toolkits
+                if static_actions:
+                    args["includeActions"] = static_actions
+                actions = await self._api.search_tools(args)
+
+                # TODO: split into multiple requests if actions length == 100
 
                 for action in actions:
-                    action_name = action.get("action", "unknown")
+                    action_name = action.get("action", "")
                     action_desc = action.get("description", "")
                     payload_schema = action.get("payload", {})
-                    
+                    payment_info = action.get("payment", {})
+
+                    if not action_name:
+                        logger.warning(f"Action name is empty for action: {action}")
+                        continue
+
+                    # TODO: consider using schema dict directly if it's a valid json schema
+
                     if isinstance(payload_schema, dict):
                         payload_schema = json.dumps(payload_schema)
+
                     try:
-                        payload_schema_with_prefix = f"function input is an object with the following properties: {payload_schema}"
-                        function_obj = Function(
-                            name=action_name,
-                            description=action_desc,
-                            parameters={
-                                "type": "object",
-                                'description':payload_schema_with_prefix
+                        parameters={
+                            "type": "object",
+                            "properties": {
+                                "payload": {
+                                    "type": "object",
+                                    "description": f"payload is an object with the following properties: {payload_schema}",
+                                    "properties": {},
+                                },
+                            },
+                            "required": ["payload"],
+                        }
+                        if payment_info:
+                            parameters["properties"]["payment"] = {
+                                "type": "number",
+                                "description": (
+                                    "Amount to authorize in USD. "
+                                    "Positive number means you will be charged no more than this amount, "
+                                    "negative number means you are requesting to get paid for at least this amount. "
+                                    f"Determine the payment amount based on the following payment information: {payment_info}"
+                                )
                             }
-                        )
-
-                        tool_obj = Tool(
+                        tool = Tool(
                             type="function",
-                            function=function_obj
+                            function=Function(
+                                name=action_name,
+                                description=action_desc,
+                                parameters=parameters,
+                            ),
                         )
-
-                        result_tools_list.append(tool_obj.model_dump(mode="json"))
-
+                        static_tools.append(tool.model_dump(mode="json"))
                     except Exception as model_error: 
                          logger.error(f"Error creating Tool/Function model for action '{action_name}': {model_error}")
 
-                return result_tools_list
+                return static_tools
             else:
                  return [] 
         except Exception as api_error:
             logger.warning(f"Failed to fetch static resources via search_tools: {api_error}. Returning empty list.")
             return [] 
 
-    def get_tools(self, dynamic_tools: bool = True, static_toolkits: List[str] = None, static_actions: List[str] = None, cache_control: bool = False) -> List[Dict[str, Any]]:
-        tools = []
-        
-        if dynamic_tools:
-            tools.extend([tool.model_dump(mode="json") for tool in tool_list])
-        
-        if static_toolkits or static_actions:
-            try:
-                static_tools = asyncio.run(self._fetch_static_tools(static_toolkits, static_actions))
-                tools.extend(static_tools)
-            except RuntimeError as e:
-                logger.error(f"RuntimeError getting static tools (possibly event loop issue): {e}")
-            except Exception as e:
-                logger.error(f"Error fetching static tools: {e}")
-        
-        if cache_control and tools:
-            tools[-1]["cache_control"] = {"type": "ephemeral"}
-        
-        return tools
+    def get_tools(
+        self,
+        dynamic_tools: bool = True,
+        static_toolkits: List[str] | None = None,
+        static_actions: List[str] | None = None,
+        cache_control: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Sync wrapper for get_tools_async.
+        """
+        return asyncio.run(self.get_tools_async(dynamic_tools, static_toolkits, static_actions, cache_control))
 
-    async def get_tools_async(self, dynamic_tools: bool = True, static_toolkits: List[str] = None, static_actions: List[str] = None, cache_control: bool = False) -> List[Dict[str, Any]]:
+    async def get_tools_async(
+        self,
+        dynamic_tools: bool = True,
+        static_toolkits: List[str] | None = None,
+        static_actions: List[str] | None = None,
+        cache_control: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the list of tools in OpenAI API compatible format.
+
+        :param dynamic_tools: Whether to include dynamic tools (search tools, use tools)
+        :param static_toolkits: List of static toolkits to include that will be exposed directly as tools
+        :param static_actions: List of static actions to include that will be exposed directly as tools
+        :param cache_control: Whether to include cache control
+        """
         tools = []
         
         if dynamic_tools:
@@ -211,12 +248,11 @@ class Tools:
         elif name == FunctionName.CALL_TOOL.value:
             return await self._api.call_tool(args)
         else:
-            call_args = {
-                "action": name,
-                "payload": args
-            }
             try:
-                return await self._api.call_tool(call_args)
+                return await self._api.call_tool({
+                    "action": name,
+                    **args,
+                })
             except Exception as e:
                 raise ValueError(f"Failed to call tool {name}: {e}")
 
