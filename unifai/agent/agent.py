@@ -424,7 +424,7 @@ class Agent:
             response, cost = await self.model_manager.chat_completion(
                 model=model,
                 messages=messages,
-                tools=self.tools.get_tools(cache_control=anthropic_cache_control),
+                tools=await self.tools.get_tools(cache_control=anthropic_cache_control),
                 parallel_tool_calls=True,
                 extra_headers=(
                     {"anthropic-beta": "token-efficient-tools-2025-02-19"}

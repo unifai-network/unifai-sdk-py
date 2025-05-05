@@ -191,19 +191,7 @@ class Tools:
             logger.warning(f"Failed to fetch static resources via search_tools: {api_error}. Returning empty list.")
             return [] 
 
-    def get_tools(
-        self,
-        dynamic_tools: bool = True,
-        static_toolkits: List[str] | None = None,
-        static_actions: List[str] | None = None,
-        cache_control: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """
-        Sync wrapper for get_tools_async.
-        """
-        return asyncio.run(self.get_tools_async(dynamic_tools, static_toolkits, static_actions, cache_control))
-
-    async def get_tools_async(
+    async def get_tools(
         self,
         dynamic_tools: bool = True,
         static_toolkits: List[str] | None = None,

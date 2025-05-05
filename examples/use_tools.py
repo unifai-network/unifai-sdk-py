@@ -12,7 +12,7 @@ async def run(msg: str, static_toolkits: List[str] | None = None, static_actions
     agent_api_key = os.getenv("UNIFAI_AGENT_API_KEY", "")
     tools = unifai.Tools(api_key=agent_api_key)
   
-    available_tools = await tools.get_tools_async(
+    available_tools = await tools.get_tools(
         dynamic_tools=True,
         static_toolkits=static_toolkits,
         static_actions=static_actions,

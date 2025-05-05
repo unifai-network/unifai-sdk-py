@@ -72,7 +72,7 @@ class OpenAIAPI():
                     response = await litellm.acompletion(
                         model=model,
                         messages=messages,
-                        tools=tools.get_tools(),
+                        tools=await tools.get_tools(),
                     )
 
                     try:

@@ -3,7 +3,7 @@ import inspect
 import json
 import logging
 from enum import Enum
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional, Union, Coroutine
 from pydantic import ValidationError, BaseModel
 from websockets import connect, ConnectionClosedError
 from websockets.asyncio.client import ClientConnection
@@ -15,7 +15,10 @@ from .messages import ActionDescription, ServerToToolkitMessage, ServerToToolkit
 logger = logging.getLogger(__name__)
 
 EventHandler = Callable[..., Any]
-ActionHandlerFunc = Callable[..., Optional[ActionResult]]
+ActionHandlerFunc = Union[
+    Callable[..., Optional[ActionResult]],
+    Callable[..., Coroutine[Any, Any, Optional[ActionResult]]]
+]
 
 class EventType(Enum):
     ON_READY = "on_ready"
@@ -115,6 +118,10 @@ class Toolkit:
                     result = await action_handler.func(*args)
                 else:
                     result = action_handler.func(*args)
+
+                if asyncio.iscoroutine(result):
+                    result = await result
+
                 if not result:
                     result = ctx.Result(None)
                     logger.warning(f"Action handler '{action_name}' returned None, sending empty result. It is recommended to return a result from the action handler.")

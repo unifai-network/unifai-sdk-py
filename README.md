@@ -38,7 +38,7 @@ Dynamic tools are enabled by default, allowing agents to discover and use tools 
 
 ```python
 # Enable dynamic tools (default behavior)
-tools_with_dynamic = tools.get_tools(dynamic_tools=True)
+dynamic_tools = await tools.get_tools(dynamic_tools=True)
 ```
 
 #### Static Toolkits
@@ -46,49 +46,54 @@ tools_with_dynamic = tools.get_tools(dynamic_tools=True)
 Static toolkits allow you to specify entire toolkits to be exposed to agents so they can be used without search.
 
 ```python
-toolkit_tools = tools.get_tools(
+static_tools = await tools.get_tools(
     dynamic_tools=False,  # Optional: disable dynamic tools
-    static_toolkits=["toolkit_id_1", "toolkit_id_2"]
+    static_toolkits=["1", "2"]
 )
 ```
+
+You can find available toolkits at https://app.unifai.network/toolkits.
 
 #### Static Actions
 
 Static actions provide granular control, allowing you to specify individual actions (tools) to be exposed to agents.
 
 ```python
-action_tools = tools.get_tools(
+static_tools = await tools.get_tools(
     dynamic_tools=False,  # Optional: disable dynamic tools
     static_actions=["action_id_1", "action_id_2"]
 )
 ```
 
-#### Combining Approaches
+You can find available actions at https://app.unifai.network/actions.
+
+#### Mixed tools
 
 You can combine these approaches for a customized tool setup:
 
 ```python
-# Combine dynamic and static tools
-combined_tools = tools.get_tools(
+combined_tools = await tools.get_tools(
     dynamic_tools=True,
     static_toolkits=["essential_toolkit_id"],
     static_actions=["critical_action_id"]
 )
 ```
 
-Then you can pass the tools to any OpenAI compatible API. Popular options include:
+### Passing tools to LLM
 
-- OpenAI's native API: For using OpenAI models directly
+You can pass the tools to any OpenAI compatible API. Popular options include:
+
+- Model providers' native API
 - [Litellm](https://github.com/BerriAI/litellm): A library that provides a unified OpenAI compatible API to most LLM providers
 - [OpenRouter](https://openrouter.ai/docs): A service that gives you access to most LLMs through a single OpenAI compatible API
 
 The tools will work with any API that follows the OpenAI function calling format. This gives you the flexibility to choose the best LLM for your needs while keeping your tools working consistently.
 
 ```python
-response = client.chat.completions.create(
-    model="gpt-4o",
+response = await litellm.acompletion(
+    model="anthropic/claude-3-7-sonnet-20250219",
     messages=[{"content": "Can you tell me what is trending on Google today?", "role": "user"}],
-    tools=tools.get_tools(),
+    tools=await tools.get_tools(),
 )
 ```
 
@@ -105,10 +110,10 @@ Passing the tool calls results back to the LLM might get you more function calls
 ```python
 messages = [{"content": "Can you tell me what is trending on Google today?", "role": "user"}]
 while True:
-    response = client.chat.completions.create(
-        model="gpt-4o",
+    response = await litellm.acompletion(
+        model="anthropic/claude-3-7-sonnet-20250219",
         messages=messages,
-        tools=tools.get_tools(),
+        tools=await tools.get_tools(),
     )
     messages.append(response.choices[0].message)
     results = await tools.call_tools(response.choices[0].message.tool_calls)
@@ -123,7 +128,7 @@ We provide a MCP server to access tools in any [MCP clients](https://modelcontex
 
 The easiest way to run the server is using `uv`, see [Instaling uv](https://docs.astral.sh/uv/getting-started/installation/) if you haven't installed it yet.
 
-Then in your Claude Desktop config:
+Then in your MCP client config:
 
 ```json
 {
@@ -143,7 +148,7 @@ Then in your Claude Desktop config:
 }
 ```
 
-Now your Claude Desktop will be able to access all the tools in Unifai automatically.
+Now your MCP client will be able to access all the tools in Unifai automatically.
 
 ## Creating tools
 
@@ -179,11 +184,11 @@ Register action handlers:
     action_description='Echo the message',
     payload_description={"content": {"type": "string"}},
 )
-def echo(ctx: unifai.ActionContext, payload={}): # can be an async function too
+async def echo(ctx: unifai.ActionContext, payload={}): # can be a sync function too
     return ctx.Result(f'You are agent <{ctx.agent_id}>, you said "{payload.get("content")}".')
 ```
 
-Note that `payload_description` can be any string or a dict that contains enough information for agents to understand the payload format. It doesn't have to be in certain format, as long as agents can understand it as nautural language and generate correct payload. Think of it as the comments and docs for your API, agents read it and decide what parameters to use.
+Note that `payload_description` can be any string or a dict that contains enough information for agents to understand the payload format. It doesn't have to be in a certain format, as long as agents can understand it as natural language and generate the correct payload. Think of it as the comments and docs for your API, agents read it and decide what parameters to use. In practice we recommend using JSON schema to match the format of training data.
 
 Start the toolkit:
 
