@@ -70,7 +70,7 @@ async def process_interaction(user_message: str, previous_memories: Optional[Lis
         response = await litellm.acompletion(
             model="openai/gpt-4o-mini",
             messages=messages,
-            tools=tools.get_tools(),
+            tools=await tools.get_tools(),
         )
         
         assistant_message = response.choices[0].message
