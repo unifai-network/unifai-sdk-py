@@ -33,7 +33,8 @@ tools = unifai.Tools(api_key='xxx')
 Unifai provides a flexible system for integrating AI tools in your applications:
 
 #### Dynamic Tools
-Dynamic tools are enabled by default, allowing your agent to discover and use tools on-the-fly based on the task at hand.
+
+Dynamic tools are enabled by default, allowing agents to discover and use tools on-the-fly based on the task at hand. Tools will not be visible to agents directly. Instead, agents will see two functions only: one to search tools, one to use tools. Agents will be able to search for tools based on sementic query, get a list of relevant tools, and use tools dynamically.
 
 ```python
 # Enable dynamic tools (default behavior)
@@ -41,10 +42,10 @@ tools_with_dynamic = tools.get_tools(dynamic_tools=True)
 ```
 
 #### Static Toolkits
-Static toolkits allow you to specify entire toolkits to be made available to your agent.
+
+Static toolkits allow you to specify entire toolkits to be exposed to agents so they can be used without search.
 
 ```python
-# Get tools from specific toolkits
 toolkit_tools = tools.get_tools(
     dynamic_tools=False,  # Optional: disable dynamic tools
     static_toolkits=["toolkit_id_1", "toolkit_id_2"]
@@ -52,17 +53,18 @@ toolkit_tools = tools.get_tools(
 ```
 
 #### Static Actions
-Static actions provide granular control, allowing you to specify individual actions (tools).
+
+Static actions provide granular control, allowing you to specify individual actions (tools) to be exposed to agents.
 
 ```python
-# Get specific actions
 action_tools = tools.get_tools(
     dynamic_tools=False,  # Optional: disable dynamic tools
-    static_actionss=["action_id_1", "action_id_2"]
+    static_actions=["action_id_1", "action_id_2"]
 )
 ```
 
 #### Combining Approaches
+
 You can combine these approaches for a customized tool setup:
 
 ```python
@@ -70,7 +72,7 @@ You can combine these approaches for a customized tool setup:
 combined_tools = tools.get_tools(
     dynamic_tools=True,
     static_toolkits=["essential_toolkit_id"],
-    static_actionss=["critical_action_id"]
+    static_actions=["critical_action_id"]
 )
 ```
 
@@ -160,13 +162,13 @@ toolkit = unifai.Toolkit(api_key='xxx')
 Update the toolkit name and/or description if you need:
 
 ```python
-await toolkit.update_toolkit(name="Echo Slam", description="What's in, what's out.")
+await toolkit.update_toolkit(name="EchoChamber", description="What's in, what's out.")
 ```
 
 or running it as a synchronous method with asyncio.run():
 
 ```python
-asyncio.run(toolkit.update_toolkit(name="Echo Slam", description="What's in, what's out."))
+asyncio.run(toolkit.update_toolkit(name="EchoChamber", description="What's in, what's out."))
 ```
 
 Register action handlers:

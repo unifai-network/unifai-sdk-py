@@ -8,13 +8,14 @@ import litellm
 import unifai
 from typing import List
 
-async def run(msg: str, toolkit_id=None, action=None):
+async def run(msg: str, static_toolkits: List[str] | None = None, static_actions: List[str] | None = None):
     agent_api_key = os.getenv("UNIFAI_AGENT_API_KEY", "")
     tools = unifai.Tools(api_key=agent_api_key)
   
     available_tools = await tools.get_tools_async(
         dynamic_tools=True,
-        static_toolkits=[toolkit_id] if toolkit_id else [],
+        static_toolkits=static_toolkits,
+        static_actions=static_actions,
     )
     messages: List = [
         {"content": unifai.Agent("").get_prompt("agent.system"), "role": "system"},
@@ -28,7 +29,7 @@ async def run(msg: str, toolkit_id=None, action=None):
             tools=available_tools,
         )
 
-        message = response.choices[0].message 
+        message = response.choices[0].message # type: ignore
 
         if message.content:
             print(message.content)
@@ -47,30 +48,28 @@ async def run(msg: str, toolkit_id=None, action=None):
         )
 
         results = await tools.call_tools(message.tool_calls) # type: ignore
-        print(results)
         if len(results) == 0:
             break
 
         messages.extend(results)
-        
 
 if __name__ == "__main__":
-    toolkit_id = None
-    action = None
+    static_toolkits = None
+    static_actions = None
     message_parts = []
 
     for arg in sys.argv[1:]:
         if arg.startswith("--toolkit="):
-            toolkit_id = arg.split("=", 1)[1]
+            static_toolkits = arg.split("=", 1)[1].split(",")
         elif arg.startswith("--action="):
-            action = arg.split("=", 1)[1]
+            static_actions = arg.split("=", 1)[1].split(",")
         else:
             message_parts.append(arg)
 
     msg = " ".join(message_parts) if message_parts else "What can you help me with?"
 
-    if not message_parts and not toolkit_id and not action and len(sys.argv) > 1:
+    if not message_parts and not static_toolkits and not static_actions and len(sys.argv) > 1:
         print("Usage: python use_tools.py [--toolkit=ID] [--action=ACTION] [your message here]")
         sys.exit(1)
 
-    asyncio.run(run(msg, toolkit_id, action))
+    asyncio.run(run(msg, static_toolkits, static_actions))
