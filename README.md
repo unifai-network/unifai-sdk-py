@@ -1,6 +1,6 @@
 # unifai-sdk-py
 
-unifai-sdk-py is the Python SDK for Unifai, an AI native platform for dynamic tools and agent to agent communication.
+unifai-sdk-py is the Python SDK for UnifAI, an AI native platform for dynamic tools and agent to agent communication.
 
 ## Installation
 
@@ -8,9 +8,9 @@ unifai-sdk-py is the Python SDK for Unifai, an AI native platform for dynamic to
 pip install unifai-sdk
 ```
 
-## Getting your Unifai API key
+## Getting your UnifAI API key
 
-You can get your API key for free from [Unifai](https://app.unifai.network/).
+You can get your API key for free from [UnifAI](https://app.unifai.network/).
 
 There are two types of API keys:
 
@@ -20,7 +20,7 @@ There are two types of API keys:
 
 ## Using tools
 
-To use tools in your agents, you need an **agent** API key. You can get an agent API key for free at [Unifai](https://app.unifai.network/).
+To use tools in your agents, you need an **agent** API key. You can get an agent API key for free at [UnifAI](https://app.unifai.network/).
 
 ```python
 import unifai
@@ -30,7 +30,7 @@ tools = unifai.Tools(api_key='xxx')
 
 ### Tool Types
 
-Unifai provides a flexible system for integrating AI tools in your applications:
+UnifAI provides a flexible system for integrating AI tools in your applications:
 
 #### Dynamic Tools
 
@@ -133,7 +133,7 @@ Then in your MCP client config:
 ```json
 {
   "mcpServers": {
-    "unifai-tools": {
+    "unifai": {
       "command": "uvx",
       "args": [
         "--from",
@@ -148,15 +148,38 @@ Then in your MCP client config:
 }
 ```
 
-Now your MCP client will be able to access all the tools in Unifai automatically.
+Now your MCP client will be able to access all the tools in UnifAI automatically through dynamic tools.
+
+You can use environment variable to choose dynamic/static tools exposed by the MCP server, for example:
+
+```json
+{
+  "mcpServers": {
+    "unifai": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "unifai-sdk",
+        "unifai-tools-mcp"
+      ],
+      "env": {
+        "UNIFAI_AGENT_API_KEY": "",
+        "DYNAMIC_TOOLS": "true",
+        "STATIC_TOOLKITS": "1,2,3",
+        "STATIC_ACTIONS": "ACTION_A,ACTION_B"
+      }
+    }
+  }
+}
+```
 
 ## Creating tools
 
-Anyone can create dynamic tools in Unifai by creating a toolkit.
+Anyone can create dynamic tools in UnifAI by creating a toolkit.
 
-A toolkit is a collection of tools that are connected to the Unifai infrastructure, and can be searched and used by agents dynamically.
+A toolkit is a collection of tools that are connected to the UnifAI infrastructure, and can be searched and used by agents dynamically.
 
-Initialize a toolkit client with your **toolkit** API key. You can get a toolkit API key for free at [Unifai](https://app.unifai.network/).
+Initialize a toolkit client with your **toolkit** API key. You can get a toolkit API key for free at [UnifAI](https://app.unifai.network/).
 
 ```python
 import unifai
