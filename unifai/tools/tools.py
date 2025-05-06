@@ -121,8 +121,8 @@ class Tools:
         self,
         static_toolkits: List[str] | None = None,
         static_actions: List[str] | None = None,
-    ) -> List[Dict[str, Any]]:
-        static_tools: List[Dict[str, Any]] = []
+    ) -> List[Tool]:
+        static_tools: List[Tool] = []
 
         try:
             if static_toolkits or static_actions:
@@ -180,7 +180,7 @@ class Tools:
                                 parameters=parameters,
                             ),
                         )
-                        static_tools.append(tool.model_dump(mode="json"))
+                        static_tools.append(tool)
                     except Exception as model_error: 
                          logger.error(f"Error creating Tool/Function model for action '{action_name}': {model_error}")
 
@@ -190,6 +190,23 @@ class Tools:
         except Exception as api_error:
             logger.warning(f"Failed to fetch static resources via search_tools: {api_error}. Returning empty list.")
             return [] 
+
+    async def _get_tools(
+        self,
+        dynamic_tools: bool = True,
+        static_toolkits: List[str] | None = None,
+        static_actions: List[str] | None = None,
+    ) -> List[Tool]:
+        tools: List[Tool] = []
+
+        if dynamic_tools:
+            tools.extend(tool_list)
+
+        if static_toolkits or static_actions:
+            static_tools = await self._fetch_static_tools(static_toolkits, static_actions)
+            tools.extend(static_tools)
+
+        return tools
 
     async def get_tools(
         self,
@@ -206,19 +223,13 @@ class Tools:
         :param static_actions: List of static actions to include that will be exposed directly as tools
         :param cache_control: Whether to include cache control
         """
-        tools = []
+        tools = await self._get_tools(dynamic_tools, static_toolkits, static_actions)
+        tools_json = [tool.model_dump(mode="json") for tool in tools]
+
+        if cache_control and tools_json:
+            tools_json[-1]["cache_control"] = {"type": "ephemeral"}
         
-        if dynamic_tools:
-            tools.extend([tool.model_dump(mode="json") for tool in tool_list])
-        
-        if static_toolkits or static_actions:
-            static_tools = await self._fetch_static_tools(static_toolkits, static_actions)
-            tools.extend(static_tools)
-        
-        if cache_control and tools:
-            tools[-1]["cache_control"] = {"type": "ephemeral"}
-        
-        return tools
+        return tools_json
 
     async def call_tool(self, name: str | FunctionName, arguments: dict | str) -> Any:
         """

@@ -9,10 +9,13 @@ import mcp.server.websocket
 import mcp.types as types
 import mcp.server.stdio
 
-from ..tools import Tools, function_list
+from unifai.tools.tools import Tools
 
 API_KEY = os.getenv("UNIFAI_AGENT_API_KEY", "")
 RAISE_EXCEPTIONS = os.getenv("RAISE_EXCEPTIONS", "true").lower() in ("true", "1")
+DYNAMIC_TOOLS = os.getenv("DYNAMIC_TOOLS", "true").lower() in ("true", "1")
+STATIC_TOOLKITS = [v.strip() for v in os.getenv("STATIC_TOOLKITS", "").split(",")] if os.getenv("STATIC_TOOLKITS") else None
+STATIC_ACTIONS = [v.strip() for v in os.getenv("STATIC_ACTIONS", "").split(",")] if os.getenv("STATIC_ACTIONS") else None
 
 SERVER_NAME = "unifai-tools"
 
@@ -32,13 +35,18 @@ async def handle_list_tools() -> list[types.Tool]:
     List available tools.
     Each tool specifies its arguments using JSON Schema validation.
     """
+    tool_list = await tools._get_tools(
+        dynamic_tools=DYNAMIC_TOOLS,
+        static_toolkits=STATIC_TOOLKITS,
+        static_actions=STATIC_ACTIONS,
+    )
     return [
         types.Tool(
-            name=function.name,
-            description=function.description,
-            inputSchema=function.parameters,
+            name=tool.function.name,
+            description=tool.function.description,
+            inputSchema=tool.function.parameters,
         )
-        for function in function_list
+        for tool in tool_list
     ]
 
 @server.call_tool()
