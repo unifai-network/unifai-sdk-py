@@ -13,9 +13,9 @@ from unifai.tools.tools import Tools
 
 API_KEY = os.getenv("UNIFAI_AGENT_API_KEY", "")
 RAISE_EXCEPTIONS = os.getenv("RAISE_EXCEPTIONS", "true").lower() in ("true", "1")
-DYNAMIC_TOOLS = os.getenv("DYNAMIC_TOOLS", "true").lower() in ("true", "1")
-STATIC_TOOLKITS = [v.strip() for v in os.getenv("STATIC_TOOLKITS", "").split(",")] if os.getenv("STATIC_TOOLKITS") else None
-STATIC_ACTIONS = [v.strip() for v in os.getenv("STATIC_ACTIONS", "").split(",")] if os.getenv("STATIC_ACTIONS") else None
+DYNAMIC_TOOLS = os.getenv("UNIFAI_DYNAMIC_TOOLS", "true").lower() in ("true", "1")
+STATIC_TOOLKITS = [v.strip() for v in os.getenv("UNIFAI_STATIC_TOOLKITS", "").split(",")] if os.getenv("UNIFAI_STATIC_TOOLKITS") else None
+STATIC_ACTIONS = [v.strip() for v in os.getenv("UNIFAI_STATIC_ACTIONS", "").split(",")] if os.getenv("UNIFAI_STATIC_ACTIONS") else None
 
 SERVER_NAME = "unifai-tools"
 
