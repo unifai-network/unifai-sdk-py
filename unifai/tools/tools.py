@@ -155,9 +155,8 @@ class Tools:
                             "type": "object",
                             "properties": {
                                 "payload": {
-                                    "type": "object",
-                                    "description": f"payload is an object with the following properties: {payload_schema}",
-                                    "properties": {},
+                                    "type": "string",
+                                    "description": f"payload is an object or json encoded string of the object with the following properties: {payload_schema}",
                                 },
                             },
                             "required": ["payload"],
