@@ -164,9 +164,9 @@ You can use environment variable to choose dynamic/static tools exposed by the M
       ],
       "env": {
         "UNIFAI_AGENT_API_KEY": "",
-        "DYNAMIC_TOOLS": "true",
-        "STATIC_TOOLKITS": "1,2,3",
-        "STATIC_ACTIONS": "ACTION_A,ACTION_B"
+        "UNIFAI_DYNAMIC_TOOLS": "true",
+        "UNIFAI_STATIC_TOOLKITS": "1,2,3",
+        "UNIFAI_STATIC_ACTIONS": "ACTION_A,ACTION_B"
       }
     }
   }
