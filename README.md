@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/unifai-network-unifai-sdk-py-badge.png)](https://mseep.ai/app/unifai-network-unifai-sdk-py)
+
 # unifai-sdk-py
 
 unifai-sdk-py is the Python SDK for UnifAI, an AI native platform for dynamic tools and agent to agent communication.
