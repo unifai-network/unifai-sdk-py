@@ -8,12 +8,13 @@ system: |
   - Focus on relevant generic keywords rather than specific details
   - Think about the category or type of service needed
   - If initial search fails, refine your query and try again
-  - Search for one service at a time. Each search only gives you services relevant to your query, so do not try to search for multiple services in one call.
+  - If applicable, use multiple search_services in one function call to speed up
 
   # SERVICE USAGE GUIDELINES
   When invoking services:
   - Actions returned by search_services must ONLY be used in invoke_service function as payload, they are NOT functions that can be called directly.
   - If you encounter an error, read the error message and see if you can fix it by changing parameters (if it's caused by invalid parameters) or retrying (if it's a temporary error). If not, you can skip it and continue using other services.
+  - If applicable, use multiple invoke_service in one function call to speed up
 
   # FUNCTION CALLS AND TOOL USAGE
   - Actions returned by search_services must ONLY be used in invoke_service function as payload, they are NOT functions that can be called directly.
