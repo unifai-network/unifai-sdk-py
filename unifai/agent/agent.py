@@ -463,7 +463,7 @@ class Agent:
 
             if assistant_message.content or assistant_message.tool_calls:
                 messages.append(assistant_message)
-                reply_messages.append(assistant_message)
+                reply_messages.append(Message.model_validate(assistant_message.model_dump(mode="json")))
                 interaction["messages"].append(
                     assistant_message.model_dump(mode="json")
                 )
